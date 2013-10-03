@@ -940,6 +940,13 @@ static int if_sdio_host_to_card(struct lbs_private *priv,
 	unsigned long flags;
 
 	lbs_deb_enter_args(LBS_DEB_SDIO, "type %d, bytes %d", type, nb);
+#ifdef CONFIG_BF54x
+	/*
+	 * Workaround for getting IP address fail through DHCP.
+	 * Because the data is sent too fast to sdio-wifi card.
+	 */
+	mdelay(20);
+#endif
 
 	card = priv->card;
 

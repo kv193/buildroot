@@ -1,0 +1,220 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make config."
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Network File Systems.*\\\(NETWORK_FILESYSTEMS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "CIFS support.*\\\(CIFS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "mount \\\(MOUNT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Support mounting CIFS/SMB file systems.*FEATURE_MOUNT_CIFS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "umount \\\(UMOUNT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "samba \\\(BR2_PACKAGE_SAMBA\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "cifs \\\(BR2_PACKAGE_SAMBA_CIFS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "eventlogadm.*BR2_PACKAGE_SAMBA_EVENTLOGADM.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "net.*BR2_PACKAGE_SAMBA_NET\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "nmbd.*BR2_PACKAGE_SAMBA_NMBD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "nmblookup.*BR2_PACKAGE_SAMBA_NMBLOOKUP.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ntlm_auth.*BR2_PACKAGE_SAMBA_NTLM_AUTH.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "pdbedit.*BR2_PACKAGE_SAMBA_PDBEDIT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "profiles.*BR2_PACKAGE_SAMBA_PROFILES.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "rpcclient.*BR2_PACKAGE_SAMBA_RPCCLIENT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbcacls.*BR2_PACKAGE_SAMBA_SMBCACLS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbclient.*BR2_PACKAGE_SAMBA_SMBCLIENT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbcontrol.*BR2_PACKAGE_SAMBA_SMBCONTROL.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbcquotas.*BR2_PACKAGE_SAMBA_SMBCQUOTAS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbget.*BR2_PACKAGE_SAMBA_SMBGET.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbldbtools.*smbldbtools.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbpasswd.*BR2_PACKAGE_SAMBA_SMBPASSWD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbsharesec.*BR2_PACKAGE_SAMBA_SMBSHARESEC.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbspool.*BR2_PACKAGE_SAMBA_SMBSPOOL.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "smbtree.*BR2_PACKAGE_SAMBA_SMBTREE\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "usbmount \\\(BR2_PACKAGE_USBMOUNT\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy linux"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

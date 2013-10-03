@@ -1,0 +1,482 @@
+#!/usr/bin/expect
+#
+# Test PM in ethernet driver
+#
+# Usage:
+#   ./power_ethernet_test.exp board_type pm_state
+#
+# Example:
+#   ./power_ethernet_test.exp BF609-EZKIT standby
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2} {
+    puts "Please input: board_type, pm_state (standby or mem)"
+    exit
+}
+set pm_state [lindex $argv 1]
+set TITLE [title "$argv0"]
+append TITLE " ($pm_state)"
+set log_name power_ethernet_${pm_state}_test_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_user "\n#### Power management state is $pm_state. ####\n"
+
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# To add following line here to indicate that if the bootargs is different,
+# it could be set here. If the bootargs value is 0, it needn't be stated,
+# for it is the default value.
+# set bootargs  $bootargs_param0
+source ../common/kernel_boot.exp
+
+set sleep_time 15
+set wakeup_fail 0
+set sleep_pattern "Syncing filesystems.*Freezing user space processes \.\.\. \\\(elapsed.*seconds\\\) done\.\r\nFreezing remaining freezable tasks \.\.\. \\\(elapsed.*seconds\\\) done\.\r\nSuspending console\\\(s\\\) \\\(use no_console_suspend to debug\\\)"
+set wakeup_pattern "Restarting tasks \.\.\. done"
+
+if { $pm_state == "mem" } {
+    if { $board_type == "BF533-STAMP" || $board_type == "BF533-EZKIT" }  {
+        set sleep_pattern ""
+        set wakeup_pattern "wakeup from.*rtcwake: short write"
+    }
+}
+
+proc pm_test_case1_reset {} {
+    global case_num
+    global kernel_prompt
+    global targetip
+    global serverip
+    global wakeup_fail
+    global pm_state
+    global sleep_pattern
+    global wakeup_pattern
+    global host_spawn_id
+    global kermit_spawn_id
+    global spawn_id
+
+    set timeout 5
+    incr case_num
+    send "echo $pm_state > /sys/power/state\r"
+    while 1 {
+        expect {
+            -re $sleep_pattern {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 1: Sleep fail\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    sleep 10
+
+    set spawn_id $host_spawn_id
+
+    set timeout 5
+    incr case_num
+    send "reset_board 4\r"
+    while 1 {
+        expect {
+            -re "powering ON board attached to printer port pin 4" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    set spawn_id $kermit_spawn_id
+
+    set timeout 5
+    incr case_num
+    while 1 {
+        expect {
+            -re $wakeup_pattern {
+		expect -re "Up.*Full"
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 1: Wake up fail\n"
+                incr wakeup_fail
+                break
+            }
+        }
+    }
+
+    set timeout 5
+    incr case_num
+    send "ifconfig\r"
+    while 1 {
+        expect {
+            -re "eth0.*$targetip.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "set ip $targetip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+
+    sleep 2
+    set timeout 20
+    send "ping $serverip -c 5\r"
+    while 1 {
+        expect {
+            -re "5 packets transmitted, 5 packets received, 0% packet loss.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "ping $serverip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+proc pm_test_case2_reset {} {
+    global case_num
+    global kernel_prompt
+    global targetip
+    global serverip
+    global pack_num
+    global wakeup_fail
+    global pm_state
+    global sleep_pattern
+    global wakeup_pattern
+    global host_spawn_id
+    global kermit_spawn_id
+    global spawn_id
+
+    set timeout 5
+    incr case_num
+    send "echo $pm_state > /sys/power/state\r"
+    while 1 {
+        expect {
+            -re $sleep_pattern {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 2: Sleep fail\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    sleep 10
+
+    set spawn_id $host_spawn_id 
+
+    set timeout 5
+    incr case_num
+    send "reset_board 4\r"
+    while 1 {
+        expect {
+            -re "powering ON board attached to printer port pin 4" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    set spawn_id $kermit_spawn_id
+    set timeout 5
+    incr case_num
+    while 1 {
+        expect {
+            -re $wakeup_pattern {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 2: Wake up fail\n"
+                incr wakeup_fail
+                break
+            }
+        }
+    }
+
+    set timeout 30
+    incr pack_num 15
+    send_user "pack_num=$pack_num\r"
+    while 1 {
+        expect {
+            -re "64 bytes from $serverip: seq=$pack_num ttl=64 time=" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "ping $serverip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+proc pm_test_case1_rtcwake {} {
+    global case_num
+    global kernel_prompt
+    global sleep_time
+    global targetip
+    global serverip
+    global wakeup_fail
+    global pm_state
+    global sleep_pattern
+    global wakeup_pattern
+
+    set timeout [expr $sleep_time + 10]
+    incr case_num
+    send "\nrtcwake -s $sleep_time -m $pm_state\r"
+    while 1 {
+        expect {
+            -re "$sleep_pattern.*$wakeup_pattern" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 1: Wake up fail\n"
+                incr wakeup_fail
+                break
+            }
+        }
+    }
+
+    set timeout 5
+    expect -re "Full\r\n|lpa 0x41E1\r\n"
+
+    set timeout 5
+    incr case_num
+    send "ifconfig\r"
+    while 1 {
+        expect {
+            -re "eth0.*$targetip.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "set ip $targetip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+
+    sleep 2
+    set timeout 20
+    send "ping $serverip -c 5\r"
+    while 1 {
+        expect {
+            -re "5 packets transmitted, 5 packets received, 0% packet loss.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "ping $serverip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+proc pm_test_case2_rtcwake {} {
+    global case_num
+    global kernel_prompt
+    global sleep_time
+    global targetip
+    global serverip
+    global pack_num
+    global wakeup_fail
+    global pm_state
+    global sleep_pattern
+    global wakeup_pattern
+
+    set timeout [expr $sleep_time + 10]
+    incr case_num
+    send "\nrtcwake -s $sleep_time -m $pm_state\r"
+    while 1 {
+        expect {
+            -re "$sleep_pattern.*$wakeup_pattern" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Test case 2: Wake up fail\n"
+                incr wakeup_fail
+                break
+            }
+        }
+    }
+
+    set timeout 5
+    expect -re "Full\r\n|lpa 0x41E1\r\n"
+
+    set timeout 30
+    incr pack_num 15
+    send_user "pack_num=$pack_num\r"
+    while 1 {
+        expect {
+            -re "64 bytes from $serverip: seq=$pack_num ttl=64 time=" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "ping $serverip failed\r"
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+step "Start testing"
+set case_num 0
+set Total_Count 5
+
+set timeout 15
+expect -re "Up.*Full"
+send "\r"
+expect -re $kernel_prompt
+
+set timeout 20
+incr case_num
+send "ping $serverip -c 5\r"
+while 1 {
+    expect {
+        -re "5 packets transmitted, 5 packets received, 0% packet loss.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ping $serverip failed\r"
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "cat /proc/mounts\r"
+while 1 {
+    expect {
+        -re "sysfs /sys sysfs rw,nosuid,nodev,noexec.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "ls /sys/power\r"
+while 1 {
+    expect {
+        -re "state.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+
+spawn /bin/bash
+
+set host_spawn_id $spawn_id
+set timeout 5
+expect -re $sh_prompt
+
+incr case_num
+set timeout 15
+send "su\r"
+while 1 {
+    expect {
+        -re "\[pP]assword" {
+            send "$password\r"
+            continue
+        }
+        -re "\[eE]rror|\[fF]ail" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+
+set spawn_id $kermit_spawn_id
+set timeout 5
+expect -re $kernel_prompt
+
+
+for {set count 1} {$count <= $Total_Count} {incr count} {
+    if { $board_type == "BF609-EZKIT" } {
+        pm_test_case1_reset
+    } else {
+        pm_test_case1_rtcwake
+    }
+    send_user "\nPM test case 1 round $count pass\n\n"
+}
+
+set timeout 20
+incr case_num
+send "ping $serverip&\r"
+while 1 {
+    expect {
+        -re "64 bytes from $serverip: seq=2 ttl=64 time=" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ping $serverip failed\r"
+            case_fail $case_num
+        }
+    }
+}
+
+set pack_num 10
+for {set count 1} {$count <= $Total_Count} {incr count} {
+    if { $board_type == "BF609-EZKIT" } {
+        pm_test_case2_reset
+    } else {
+        pm_test_case2_rtcwake
+    }
+    send_user "\nPM test case 2 round $count pass\n\n"
+}
+
+incr case_num
+if { $wakeup_fail == 0 } {
+    send_user "Wake up pass\n"
+    case_pass $case_num
+} else {
+    send_user "Wake up fail $wakeup_fail times\n"
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

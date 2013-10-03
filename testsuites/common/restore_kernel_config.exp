@@ -1,0 +1,47 @@
+#!/usr/bin/expect
+
+if { ![file exists $src_root/config.kernel.policy] } {
+    send_user "\nNo config file config.kernel.policy in $src_root\n"
+    return
+}
+
+cd $src_root
+set timeout 1000
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+if [ catch {exec cp $src_root/config.kernel.policy $custom_kernel/.config} ] {
+    send_user "\nFail to copy config.kernel.policy to $custom_kernel\n"
+    send_user "$errorInfo\n"
+}
+
+return

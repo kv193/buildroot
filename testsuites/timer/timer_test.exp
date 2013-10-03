@@ -1,0 +1,134 @@
+#!/usr/bin/expect
+#
+# timer test
+#
+# Usage:
+#   ./timer_test.exp board_type timer_frequency
+#
+# Example:
+#   ./timer_test.exp BF537-STAMP 100
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2 } {
+    puts "Please input: timer_frequency(100, 250 or 1000(Mhz)."
+    exit
+}
+set timer_frequency [lindex $argv 1]
+set TITLE [title "$argv0"]
+append TITLE " ($timer_frequency Mhz)"
+set log_name timer${timer_frequency}_test_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_user "\n#### Test with timer_frequency $timer_frequency Mhz\n"
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+
+step "Start testing"
+set case_num 0
+set timeout 5
+set SLEEP_TIME 10
+set timer_interrupt_id 6
+set timer_interrupt_name "Blackfin CoreTimer"
+
+send "uname -a\r"
+while 1 {
+    expect {
+        -re "SMP.*$kernel_prompt" {
+            send_user "\nIt's a SMP kernel!\n"
+            break
+        }
+        -re $kernel_prompt {
+            send_user "\nIt's not a SMP kernel.\n"
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 120
+incr case_num
+send -s "cat /proc/uptime ; cat /proc/interrupts\r"
+while 1 {
+    expect {
+        -re "(\[0-9]+\\.\[0-9]+) \[0-9]+\\.\[0-9]+" {
+            set START_TIME $expect_out(1,string)
+            expect {
+                -re "$timer_interrupt_id: + (\[0-9]+) .* $timer_interrupt_name" {
+                    set TIMER_TICK_START $expect_out(1,string)
+                    case_pass $case_num
+                    expect -re $kernel_prompt
+                    break
+                }
+            }
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout [ expr $SLEEP_TIME + 5 ]
+incr case_num
+send "sleep $SLEEP_TIME\r"
+while 1 {
+    expect {
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 120
+incr case_num
+send -s "cat /proc/uptime ; cat /proc/interrupts\r"
+while 1 {
+    expect {
+        -re "(\[0-9]+\\.\[0-9]+) \[0-9]+\\.\[0-9]+" {
+            set END_TIME $expect_out(1,string)
+            expect {
+                -re "$timer_interrupt_id: + (\[0-9]+) .* $timer_interrupt_name" {
+                    set TIMER_TICK_END $expect_out(1,string)
+                    case_pass $case_num
+                    expect -re $kernel_prompt
+                    break
+                }
+            }
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+
+set TIMER_TICK_AVERAGE [ expr [ expr $TIMER_TICK_END - $TIMER_TICK_START ] / [ expr $END_TIME - $START_TIME ] ]
+send_user "TIMER_TICK_AVERAGE  $TIMER_TICK_AVERAGE\r"
+
+incr case_num
+send_user "\rCheck if TIMER_TICK_AVERAGE is in the right range\r"
+if {$TIMER_TICK_AVERAGE < [expr $timer_frequency + 25]   && $TIMER_TICK_AVERAGE > [expr $timer_frequency - 25] } {
+    case_pass $case_num
+} else {
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

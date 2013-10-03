@@ -1,0 +1,25 @@
+#!/usr/bin/expect
+
+cd $src_root
+spawn make clean
+set timeout 1200
+while 1 {
+    expect {
+        "rm" {}
+        eof { break }
+    }
+}
+
+spawn ls output/
+set timeout 5
+while 1 {
+    expect {
+        -re "images" {
+            send_user "ERROR: Error somewhere during make clean"
+            return 1
+        }
+        eof { break }
+    }
+}
+
+return 0

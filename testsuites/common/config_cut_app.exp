@@ -1,0 +1,271 @@
+#!/usr/bin/expect
+
+cd $src_root
+step "user space config - first time"
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "alsa-utils.*BR2_PACKAGE_ALSA_UTILS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ffmpeg.*BR2_PACKAGE_FFMPEG.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libid3tag.*BR2_PACKAGE_LIBID3TAG.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "speex.*BR2_PACKAGE_SPEEX.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libvorbis.*BR2_PACKAGE_LIBVORBIS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "jpeg.*BR2_PACKAGE_JPEG.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libpng.*BR2_PACKAGE_LIBPNG.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "usbutils.*BR2_PACKAGE_USBUTILS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libgcrypt.*BR2_PACKAGE_LIBGCRYPT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libgpg-error.*BR2_PACKAGE_LIBGPG_ERROR.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libao.*BR2_PACKAGE_LIBAO.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libmad.*BR2_PACKAGE_LIBMAD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libogg.*BR2_PACKAGE_LIBOGG.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "openssl \\\(BR2_PACKAGE_OPENSSL.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "sqlite.*BR2_PACKAGE_SQLITE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "readline.*BR2_PACKAGE_READLINE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "libusb.*BR2_PACKAGE_LIBUSB.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "string test.*BR2_PACKAGE_STRING_TEST.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "SDL.*BR2_PACKAGE_SDL.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "flac.*BR2_PACKAGE_FLAC.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Show packages that are also provided by busybox.*BR2_PACKAGE_BUSYBOX_SHOW_OTHERS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "dhrystone.*BR2_PACKAGE_DHRYSTONE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "whetstone.*BR2_PACKAGE_WHETSTONE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "lmbench.*BR2_PACKAGE_LMBENCH.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "nbench.*BR2_PACKAGE_NBENCH.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "dbus.*BR2_PACKAGE_DBUS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "dosfstools.*BR2_PACKAGE_DOSFSTOOLS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "lzo.*BR2_PACKAGE_LZO.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "expat.*BR2_PACKAGE_EXPAT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "bfin dma test.*BR2_PACKAGE_BFIN_DMA.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "event test.*BR2_PACKAGE_EVENT_TEST.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "strace.*BR2_PACKAGE_STRACE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Qt \\\(BR2_PACKAGE_QT\\\) .*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "lirc.*BR2_PACKAGE_LIRC.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "mtd/jffs2 utilities.*BR2_PACKAGE_MTD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "tiff.*BR2_PACKAGE_TIFF.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "bluez-utils.*BR2_PACKAGE_BLUEZ_UTILS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "wireless tools.*BR2_PACKAGE_WIRELESS_TOOLS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "\r\nlib.*LIB.*\\\[Y\/n.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+step "user space config - second time"
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "alsa-lib.*BR2_PACKAGE_ALSA_LIB.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ncurses.*BR2_PACKAGE_NCURSES.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "zlib.*BR2_PACKAGE_ZLIB.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "\r\nlib.*LIB.*\\\[Y\/n.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+       -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "udhcp client.*UDHCPC.*\\\[.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+

@@ -1,0 +1,144 @@
+#!/bin/bash
+THIS_LOG=`pwd`
+testsuite_name="testsuite_name"
+class_name="class_name"
+test_time=0
+
+if [ -n "$1" ] ; then
+    THIS_LOG=$1
+fi
+result_xml=$THIS_LOG/result.xml
+
+if [ -n "$2" ] ; then
+    testsuite_name=$2
+fi
+
+if [ -n "$3" ] ; then
+    class_name=$3
+fi
+
+cd $THIS_LOG
+
+if [ ! -d test_summary ] ; then
+    mkdir test_summary
+fi
+
+rm -fr $result_xml
+
+
+#################### Function declaration ####################
+
+# Usage of function gen_testcase:
+# gen_testcase "$result" "$class_name" "$case_name" "$test_time" "$result_xml" "$err_msg"
+gen_testcase () {
+    if [ $1 == "PASS" ] ; then
+        echo -e "<testcase classname=\"$2\" name=\"$3\" time=\"$4\"></testcase>" >>$5
+    elif [ $1 == "FAIL" ] ; then
+        echo -e "<testcase classname=\"$2\" name=\"$3\" time=\"$4\">\n<failure message=\"test fail\">\n$6\n</failure>\n</testcase>" >>$5
+    else
+        echo -e "<testcase classname=\"$2\" name=\"$3\" time=\"$4\">\n<failure message=\"N/A\">\nUnknow result!\n</failure>\n</testcase>" >>$5
+    fi
+}
+
+# Usage of function complete_xml:
+# complete_xml "$testsuite_name" "$err_num" "$failure_num" "$skip_num" "$test_num" "$overall_time" "$result_xml"
+complete_xml () {
+    sed -i '1i\<?xml version=\"1.0\" encoding=\"utf-8\"?>' $7
+    sed -i "2i\<testsuite name=\"$1\" errors=\"$2\" failures=\"$3\" skips=\"$4\" tests=\"$5\" time=\"$6\">" $7
+    sed -i '$a\</testsuite>' $7
+}
+
+
+# check with build kernel log to see if kernel is built out
+
+ls build*kernel_log*  > test_summary/all_build_log_list
+
+#grep -r "Leaving directory.*uclinux-dist\/vendors\/AnalogDevices" -m 30 -A 3 build*kernel_log* | grep "STEP .* Copy" | sed 's/\-\*/ \*/'| awk '{print$1}'| uniq > test_summary/build_kernel_pass_log
+grep -r "rm.*fakeroot" -m 30 -A 20 * | grep "STEP .* Copy" | sed 's/\-\*/ \*/'| awk '{print$1}'| uniq > test_summary/build_kernel_pass_log
+
+echo -e "\n######The following build kernel fails:#######\n" > test_summary/summary
+comm -3  test_summary/all_build_log_list  test_summary/build_kernel_pass_log > test_summary/build_kernel_fail_log
+cat test_summary/build_kernel_fail_log  >> test_summary/summary
+
+rm -f test_summary/all_build_log_list
+rm -f test_summary/build_kernel_pass_log
+
+# generate xml content for failed build log
+fail_num=0
+for build_file in `cat test_summary/build_kernel_fail_log`
+do
+    result=FAIL
+    case_name=${build_file/_kernel_log/}
+
+    # delete control characters: ^A ^C ^G ^H ^Q ^X ^[ ; turn ^M to \n
+    err_msg=`tail -n 30 $build_file | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | tr -d "\001" | tr -d "\003" | tr -d "\007" | tr -d "\010" | tr -d "\021" | tr -d "\030" | tr -d "\033" | tr -d "\r"`
+
+    ((fail_num += 1))
+    gen_testcase "$result" "$class_name" "$case_name" "$test_time" "$result_xml" "$err_msg"
+done
+
+
+# check with test log to see if test result is given out
+
+ls *log* | grep -v build.*log | grep -v ftp_test_log | grep -v telnet_test_log | grep -v kernel_test_log | grep -v test_runtime_control_log | grep -v .*detailed.* | grep -v .*summary.* > test_summary/all_test_log_list
+
+grep -r "T[Ee][Ss][Tt] .*\.\.\.\[[PF]A[SI][SL]]" -m 1 *log* --binary-files=text | sed 's/:/ /'| awk '{print $1}' > test_summary/test_log_with_result
+
+comm -3 test_summary/all_test_log_list test_summary/test_log_with_result > test_summary/test_log_without_result
+
+grep "T[Ee][Ss][Tt] .*\.\.\.\[PASS]" *log* --binary-files=text |  sed 's/.*log:/ /' | sed 's/\..*\[PASS\]/ /g' > test_summary/pass_summary
+grep "T[Ee][Ss][Tt] .*\.\.\.\[FAIL]" *log* --binary-files=text |  sed 's/.*log:/ /' | sed 's/\..*\[FAIL\]/ /g' > test_summary/fail_summary
+cat test_summary/test_log_without_result | grep -v spi_flash.*log >> test_summary/fail_summary
+
+# generate xml content for passed test log
+test_pass_log=`grep -l "T[Ee][Ss][Tt] .*\.\.\.\[PASS]" *log* --binary-files=text`
+pass_num=0
+for test_log in $test_pass_log
+do
+    result=PASS
+    case_name=${test_log/_test_log/}
+    err_msg=''
+    test_time=`grep -e "Test Period is: [0-9]* seconds" $test_log  --binary-files=text | awk 'BEGIN { FS="[ ]" } {print $4}'`
+
+    ((pass_num += 1))
+    gen_testcase "$result" "$class_name" "$case_name" "$test_time" "$result_xml" "$err_msg"
+done
+
+# generate xml content for failed test log
+test_fail_log="`grep -l "T[Ee][Ss][Tt] .*\.\.\.\[FAIL]" *log* --binary-files=text` `cat test_summary/test_log_without_result`"
+for test_log in $test_fail_log
+do
+    result=FAIL
+    case_name=${test_log/_test_log/}
+    test_time=`grep -e "Test Period is: [0-9]* seconds" $test_log  --binary-files=text | awk 'BEGIN { FS="[ ]" } {print $4}'`
+
+    # delete control characters: ^A ^C ^G ^H ^Q ^X ^[ ; turn ^M to \n
+    err_msg=`tail -n 20 $test_log | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g' | tr -d "\001" | tr -d "\003" | tr -d "\007" | tr -d "\010" | tr -d "\021" | tr -d "\030" | tr -d "\033" | tr -d "\r"`
+
+    ((fail_num += 1))
+    gen_testcase "$result" "$class_name" "$case_name" "$test_time" "$result_xml" "$err_msg"
+done
+
+rm -f test_summary/all_test_log_list
+rm -f test_summary/test_log_with_result
+rm -f test_summary/test_log_without_result
+
+
+num=`cat test_summary/pass_summary | wc -l`
+echo -e "\n############ Pass Num is: $num.#############\n" >> test_summary/summary
+cat test_summary/pass_summary  >> test_summary/summary
+
+num=`cat test_summary/fail_summary | wc -l`
+echo -e "\n############ Fail Num is: $num.#############\n" >> test_summary/summary
+cat test_summary/fail_summary  >> test_summary/summary
+
+# generate complete result.xml
+err_num=0
+skip_num=0
+test_num=$((fail_num + pass_num))
+overall_time=0
+complete_xml "$testsuite_name" "$err_num" "$fail_num" "$skip_num" "$test_num" "$overall_time" "$result_xml"
+
+
+rm -f summary
+cp test_summary/summary summary

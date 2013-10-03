@@ -1,0 +1,224 @@
+#!/usr/bin/expect --
+#
+# Build Kernel for XIP test in kernel.
+# Root file system is NFS.
+# Kernel image is flashed into parallel flash.
+#
+# Usage:
+#   ./build_kernel_xip_kernel.exp board_type binary_format
+#
+# Example:
+#   ./build_kernel_xip_kernel.exp BF537-STAMP fdpic
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2} {
+    puts "Please input: board_type, binary_format(fdpic or shared-flat)"
+    exit
+}
+set format [lindex $argv 1]
+set log_name build_kernel_xip_${format}_kernel_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_log "\n#### Build kernel with binary_format $format. ####\n"
+
+
+set HAVE_KERNEL_ONLY_IMAGE 1
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp $format
+
+cd $src_root/testsuites/common
+source config_cut_app.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Kernel executes from.*(\[0-9]). ROM.*choice.*\\\[.*]" {
+            send "$expect_out(1,string)\r"
+        }
+
+        -re "Initial RAM filesystem and RAM disk.*BLK_DEV_INITRD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Detect flash chips by Common Flash Interface.*MTD_CFI.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Support for Intel/Sharp flash chips.*MTD_CFI_INTELEXT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Support for ROM chips in bus mapping.*MTD_ROM.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Flash device in physical memory map.*MTD_PHYSMAP.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Network File Systems \\\(NETWORK_FILESYSTEMS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "NFS client support \\\(NFS_FS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "NFS client support for NFS version 3 \\\(NFS_V3\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Root file system on NFS \\\(ROOT_NFS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Kernel support for FDPIC ELF binaries.*BINFMT_ELF_FDPIC.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Kernel support for flat binaries.*BINFMT_FLAT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Enable shared FLAT support \\\(BINFMT_SHARED_FLAT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "Config kernel again"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Kernel ROM Base.*ROM_BASE.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "0x20080040\r"
+            } elseif { $board_type == "BF609-EZKIT" } {
+                send "0xB0080040\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Target ABI.*FDPIC.*FLAT.*FLAT_SEP_DATA.*SHARED_FLAT.*\\\[.*]" {
+            if { $format == "fdpic" } {
+                send "1\r"
+            } elseif { $format == "shared-flat" } {
+                send "4\r"
+            } else {
+                send "1\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

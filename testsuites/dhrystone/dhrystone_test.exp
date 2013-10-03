@@ -1,0 +1,77 @@
+#!/usr/bin/expect
+#
+# dhrystone performance test
+#
+# Usage:
+#   ./dhrystone_test.exp board_type
+#
+# Example:
+#   ./dhrystone_test.exp BF537-STAMP
+#
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+set case_num 0
+set timeout 10
+
+spawn /bin/bash
+expect -re $sh_prompt
+
+set timeout 5
+incr case_num
+send "cd $src_root/testsuites/dhrystone/\r"
+while 1 {
+    expect {
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set result_flag NA
+set timeout 10000
+incr case_num
+send "time ./test_dhrystone.sh $targetip $src_root\r\n"
+while 1 {
+    expect {
+        -re "(rcp:|No such).*$sh_prompt" {
+            set result_flag FAIL
+            break
+        }
+        -re "real.*user.*sys.*$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+	    set timeout 5
+            send "\3"
+	    expect -re $sh_prompt
+            set result_flag FAIL
+            break
+        }
+    }
+}
+
+if { $result_flag == "FAIL" } {
+    incr case_num
+    send_user "FAIL when running dhrystone test."
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,197 @@
+#!/usr/bin/expect
+
+source  ../common/kernel_config.exp
+source  ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+set board_type [lindex $argv 0]
+
+cd $src_root/testsuites/common
+
+step "Make config."
+
+source  make_default_config.exp
+
+# Following make specific configuration for this case.
+
+#tee "Begin the interactive process of configuration"
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Watchdog Timer Support.*WATCHDOG.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "Blackfin On-Chip Watchdog Timer.*BFIN_WDT.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "Symmetric multi-processing support.*SMP.*\\\[.*]" {
+            send "Y\r"
+        }
+
+         -re "Enable NMI watchdog to help debugging lockup on SMP.*NMI_WATCHDOG.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+
+        -re "watchdog.*WATCHDOG.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+         -re "nmi wdt test.*BR2_PACKAGE_NMI_WDT_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+
+step "Make"
+
+source  make_kernel.exp
+
+cd $src_root
+
+step "Edit inittab file."
+
+set timeout 2
+spawn ex output/target/etc/inittab
+expect {
+    "Entering Ex mode*Normal mode." { }
+
+    "already exists!" {
+        send "e\r"
+        sleep 1
+    }
+}
+sleep 1
+send "/watchdogd\r"
+expect "watchdogd*"
+send "d\r"
+expect ":"
+send "wq\r"
+expect eof
+
+
+step "Make images again."
+
+cd $src_root
+spawn make 
+set timeout 1200
+set bfin_make_status failure
+while 1 {
+    expect {
+        "Entering directory" { }
+        "Leaving directory" { set bfin_make_status success }
+        "Error" {set bfin_make_status failure }
+        "/bin/sh" { }
+        eof { break }
+    }
+}
+
+if { $bfin_make_status == "failure" } {
+    puts "ERROR: Error somewhere during make"
+
+}
+
+
+cd $src_root/testsuites/common
+
+step "Copy linux"
+
+source   copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

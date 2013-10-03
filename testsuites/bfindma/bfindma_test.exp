@@ -1,0 +1,51 @@
+#!/usr/bin/expect
+#
+# bfin dma test
+#
+# Usage:
+#   ./bfindma_test.exp board_type
+#
+# Example:
+#   ./bfindma_test.exp BF537-STAMP
+#
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+set case_num 0
+set timeout 10
+expect -re $kernel_prompt
+
+set timeout 20
+incr case_num
+send "bfin-dma\r"
+while 1 {
+    expect {
+        -re "Hardware Trace|\[fF]ail|\[eE]rror" {
+            expect -re $kernel_prompt
+            case_fail $case_num
+        }
+        -re "memcmp = 0.*memcmp = 0.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send -s "\3"
+            send_user "FAIL: run bfin-dma timeout\n"
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

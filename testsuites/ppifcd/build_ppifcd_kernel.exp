@@ -1,0 +1,159 @@
+#!/usr/bin/expect
+#Before building for BF533-STAMP, make sure change sda_pin to 2 and scl_pin to 4 in stamp.c.
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+if { $board_type == "BF533-STAMP" } {
+    set board_file $src_root/linux/linux-kernel/arch/blackfin/mach-bf533/boards/stamp.c 
+    if [ catch {exec sed -i "/sda_pin/ s/GPIO_PF2/2/" $board_file} ] {
+        send_user "\nfail to modify sda_pin in stamp.c\n"
+        send_user "$errorInfo\n"
+        exit
+    }
+
+    if [ catch {exec sed -i "/scl_pin/ s/GPIO_PF3/4/" $board_file} ] {
+        send_user "\nfail to modify scl_pin in stamp.c\n"
+        send_user "$errorInfo\n"
+        exit
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make config."
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Blackfin Generic PPI Driver.*BFIN_PPI.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "GPIO Support.*GPIOLIB.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "I2C support.*I2C\[^_].*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "I2C device interface.*I2C_CHARDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "GPIO-based bitbanging I2C.*I2C_GPIO.*\\\[.*]" {
+            if { $board_type == "BF533-STAMP" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "Blackfin TWI I2C support.*I2C_BLACKFIN_TWI.*\\\[.*]" {
+            if { $board_type == "BF537-STAMP" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Blackfin TWI I2C clock.*I2C_BLACKFIN_TWI_CLK_KHZ.*\\\[.*]" {
+            if { $board_type == "BF537-STAMP" } {
+                send "50\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Sound card support.*SOUND.*\\\[.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "ppifcd test.*BR2_PACKAGE_PPIFCD_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "bfin canned demos.*BR2_PACKAGE_BFIN_CANNED_DEMOS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re " (\[0-9]+). CGI based Test Application for the PPI Frame Capture Driver.*BR2_PACKAGE_PPIFCDCGI.*\[cC]hoice.*\\\[.*]" {
+            send "$expect_out(1,string)\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy linux"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

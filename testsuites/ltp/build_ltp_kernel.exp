@@ -1,0 +1,171 @@
+#!/usr/bin/expect
+#
+# Build script for ltp test.
+#
+# Usage:
+#   ./build_ltp_kernel.exp board_type allocator wb_wt high_res_timer_preempt
+#
+# Example:
+#   allocator: 1 for slab, 2 for slub, 3 for slob;
+#   wb_wt: 0 for default, 1 for write back, 2 for write through;
+#   high_res_timer_preempt: 0 for default, 1 for high resolution timer and preempt;
+#   ./build_ltp_kernel.exp BF537-STAMP 1 1 0
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+if { $argc < 4} {
+    puts "Please input: board_type, allocator, wb_wt, high_res_timer_preempt"
+    exit
+}
+set allocator [lindex $argv 1]
+set wb_wt [lindex $argv 2]
+set high_res_timer_preempt [lindex $argv 3]
+
+cd $src_root/testsuites/common
+step "Make default config"
+source  make_default_config.exp
+
+if { $board_type == "BF548-EZKIT" } {
+# enable for mount/umount test
+    cd $src_root/testsuites/common
+    step "Kernel config for specified usb host"
+    source_args config_usb.exp musb dma
+}
+
+cd $src_root/testsuites/common
+source  config_cut_app.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Enable timerfd\\\(\\\) system call.*TIMERFD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Enable eventfd\\\(\\\) system call.*EVENTFD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Choose SLAB allocator\r\n.*(\[0-9]+). SLAB.*SLUB.*SLOB.*\\\[.*]" {
+            if { $allocator == "1" } {
+                send "1\r"
+            } elseif { $allocator == "2" } {
+                send "2\r"
+            } elseif { $allocator == "3" } {
+                send "3\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "\[Pp]olicy.*Write back.*BFIN_EXTMEM_WRITEBACK.*Write through.*BFIN_EXTMEM_WRITETHROUGH.*\[cC]hoice.*\\\[.*]" {
+            if { $wb_wt == "1" } {
+                send "1\r"
+            } elseif { $wb_wt == "2" } {
+                send "2\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "(\[0-9]+). Preemptible Kernel.*PREEMPT.*\[cC]hoice\\\[.*]:" {
+            if { $high_res_timer_preempt == 1 } {
+                send "$expect_out(1,string)\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "High Resolution Timer Support.*HIGH_RES_TIMERS.*\\\[.*]" {
+            if { $high_res_timer_preempt == 1 } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "BSD Process Accounting.*BSD_PROCESS_ACCT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+step "Busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "hostid.*HOSTID.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

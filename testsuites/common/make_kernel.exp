@@ -1,0 +1,22 @@
+#!/usr/bin/expect
+
+cd $src_root
+spawn make
+set timeout 1200
+set make_status failure
+while 1 {
+    expect {
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+        -re "rm.*\.fakeroot" { set make_status success }
+        "Error" {set make_status failure }
+        eof { break }
+    }
+}
+
+if { $make_status == "failure" } {
+    puts "ERROR: Error somewhere during make"
+    exit
+}

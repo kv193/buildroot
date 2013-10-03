@@ -1,0 +1,117 @@
+#!/usr/bin/expect
+
+set bfin_format [lindex $argv 0]
+
+step "user space config - change to binary format $bfin_format"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Target ABI.*\[cC]hoice\\\[.*]" {
+            if { $bfin_format == "fdpic" } {
+                send "1\r"
+            } elseif { $bfin_format == "flat" } {
+                send "2\r"
+            } elseif { $bfin_format == "shared-flat" } {
+                send "4\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "prefer static libraries.*BR2_PREFER_STATIC_LIB.*\\\[.*]" {
+            if { $bfin_format == "fdpic" } {
+                send "N\r"
+            } elseif { [string match "*flat*" $bfin_format] } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Toolchain prefix.*BR2_TOOLCHAIN_EXTERNAL_CUSTOM_PREFIX.*\\\[.*]" {
+            if { $bfin_format == "fdpic" } {
+                send "bfin-linux-uclibc\r"
+            } elseif { [string match "*flat*" $bfin_format] } {
+                send "bfin-uclinux\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "BusyBox configuration file to use.*BR2_PACKAGE_BUSYBOX_CONFIG.*\\\[.*]" {
+            if { $bfin_format == "fdpic" } {
+                send "board/AnalogDevices/blackfin/busybox-fdpic.config\r"
+            } elseif { [string match "*flat*" $bfin_format] } {
+                send "board/AnalogDevices/blackfin/busybox-flat.config\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+if { $bfin_format == "shared-flat" } {
+    step "kernel config - only shared-flat format has different kernel config"
+    cd $src_root
+    set timeout 500
+    spawn make linux-config
+    while 1 {
+        expect {
+            -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+                continue
+            }
+
+            -re "Enable shared FLAT support.*BINFMT_SHARED_FLAT.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "($anomalous_option) \\\[\[^\]]+/.]" {
+                send "\r"
+            }
+
+            "\\\(*) \\\[*]" {
+                sleep .01
+                send "\r"
+            }
+
+            -re "\[cC]hoice\\\[.*]:" {
+                send "\r"
+            }
+
+            eof {
+                send_user "\nEnd of configuration\n"
+                break
+            }
+
+            timeout {
+                send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+                exit
+            }
+        }
+    }
+}

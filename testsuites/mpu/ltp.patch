@@ -1,0 +1,40 @@
+Index: testcases/kernel/syscalls/mmap/mmap03.c
+===================================================================
+--- testcases/kernel/syscalls/mmap/mmap03.c	(revision 230)
++++ testcases/kernel/syscalls/mmap/mmap03.c	(working copy)
+@@ -168,7 +168,7 @@
+ 						 "correct");
+ 				}
+ 			}
+-#if defined(__ia64__) || defined(__hppa__)
++#if defined(__ia64__) || defined(__hppa__) || defined(UCLINUX)
+ 			if (pass) {
+ 				tst_resm(TPASS, "Got SIGSEGV as expected");
+ 			} else {
+Index: testcases/kernel/Makefile
+===================================================================
+--- testcases/kernel/Makefile	(revision 230)
++++ testcases/kernel/Makefile	(working copy)
+@@ -28,7 +28,7 @@
+ # NOTE (garrcoop): mce-test isn't integrated into the build.
+ 
+ # Build syscalls in all scenarios.
+-SUBDIRS			:= syscalls
++SUBDIRS			:= mem syscalls
+ 
+ # Build lib
+ SUBDIRS			+= lib
+Index: testcases/kernel/mem/Makefile
+===================================================================
+--- testcases/kernel/mem/Makefile	(revision 230)
++++ testcases/kernel/mem/Makefile	(working copy)
+@@ -22,5 +22,9 @@
+ 
+ top_srcdir		?= ../../..
+ 
++ifeq ($(UCLINUX),1)
++    SUBDIRS         := mtest06
++endif
++
+ include $(top_srcdir)/include/mk/env_pre.mk
+ include $(top_srcdir)/include/mk/generic_trunk_target.mk

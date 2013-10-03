@@ -1,0 +1,143 @@
+#!/usr/bin/expect
+#
+# Test qt application
+#
+# Usage:
+#   ./qt_test.exp board_type
+#
+# Example:
+#   ./qt_test.exp BEAGLE
+#
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+
+step "Start testing"
+
+set case_num 0
+set timeout 8
+
+# BF609-EZKIT need to use ad7879 touchscreen driver to light the balcklight
+if { $board_type == "BF609-EZKIT" } {
+    step "Light backlight for BF609-EZKIT"
+    start_backlight
+}
+
+sleep 5
+send "cd\r"
+expect -re $kernel_prompt
+
+# Contents for manual test
+while 0 {
+step "Runtime configuration of keyboard/mouse/touchscreen for QT"
+puts "\nUSB keyboard/mouse/touchscreen may conflict for QT"
+puts "If you choose keyboard, press \"k\" and enter;"
+puts "If you choose touchscreen, press \"t\" and enter;"
+puts "If you choose mouse, press \"m\" and enter:"
+set timeout 30
+while 1 {
+    expect_user {
+        -re "\[kK]" {
+            send "export QWS_KEYBOARD=USB:/dev/input/event2\r"
+            expect -re $kernel_prompt
+            set use_ts 0
+            break
+        }
+        -re "\[tT]" {
+            send "export QWS_MOUSE_PROTO=tslib\r"
+            expect -re $kernel_prompt
+            set use_ts 1
+            break
+        }
+        -re "\[mM]" {
+            send "export QWS_MOUSE_PROTO=IntelliMouse:/dev/input/mouse0\r"
+            expect -re $kernel_prompt
+            set use_ts 0
+            break
+        }
+        timeout {
+            send_user "Choose touchscreen by default\n"
+            send "export QWS_MOUSE_PROTO=tslib\r"
+            expect -re $kernel_prompt
+            set use_ts 1
+            break
+        }
+    }
+}
+
+if { $use_ts == "1" } {
+    step "Runtime configuration for tslib"
+    send "export TSLIB_FBDEVICE=/dev/fb0\r"
+    expect -re $kernel_prompt
+    send "export TSLIB_CONSOLEDEVICE=none\r"
+    expect -re $kernel_prompt
+    send "export TSLIB_CONFFILE=/etc/ts.conf\r"
+    expect -re $kernel_prompt
+    send "export TSLIB_CALIBFILE=/etc/pointercal\r"
+    expect -re $kernel_prompt
+    send "export TSLIB_TSDEVICE=/dev/input/event0\r"
+    expect -re $kernel_prompt
+
+    step "Calibration for tslib"
+    set timeout 60
+    incr case_num
+    send "ts_calibrate\r"
+    while 1 {
+        expect {
+            -re "Calibration constants.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+}
+# End of contents for manual test
+
+step "Run QT example"
+incr case_num
+set timeout 60
+send "/usr/share/qt/examples/widgets/calendarwidget/calendarwidget -qws\r"
+while 1 {
+    expect {
+        -re "\r\n\[a-zA-Z0-9]" {
+            expect -re $kernel_prompt
+            case_fail $case_num
+        }
+        timeout {
+            case_pass $case_num
+            break
+        }
+    }
+}
+
+set timeout 10
+incr case_num
+send -s "\3"
+while 1 {
+    expect {
+         -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

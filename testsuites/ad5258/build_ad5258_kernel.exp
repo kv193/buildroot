@@ -1,0 +1,163 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make config."
+source make_default_config.exp
+
+# Following make specific configuration for this case.
+#Since the i2c support is located after input device driver but some config in input need i2c to be selected, so run two rounds of selection.
+#puts "Begin the interactive process of configuration"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "I2C support.*I2C\[^_].*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "I2C device interface.*I2C_CHARDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Blackfin TWI I2C support.*I2C_BLACKFIN_TWI.*\\\[.*]" {
+            if { $board_type == "BF537-STAMP" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Blackfin TWI I2C clock.*I2C_BLACKFIN_TWI_CLK_KHZ.*\\\[.*]" {
+            if { $board_type == "BF537-STAMP" } {
+                send "50\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Misc devices.*MISC_DEVICES.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Analog Devices Digital Potentiometers.*AD525X_DPOT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "support I2C bus connection.*AD525X_DPOT_I2C.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy linux"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,262 @@
+#!/usr/bin/expect
+#
+# Test ethernet driver with tool netperf;
+#
+# Usage:
+#   1. Test normal ethernet:
+#      ./ethernet_test.exp board_type
+#   2. Test through USB-ethernet converter:
+#      ./ethernet_test.exp board_type usb
+#
+# Example:
+#   ./ethernet_test.exp BEAGLE
+#   ./ethernet_test.exp BEAGLE usb
+#
+
+source  ../common/kernel_config.exp
+
+if { $argc < 1} {
+puts "Please input: board_type [extra_config] ."
+exit
+}
+
+set extra_config "normal"
+
+if { $argc >= 2} {
+    set extra_config [lindex $argv 1]
+}
+if { $extra_config == "normal" || $extra_config == "usb" } {
+    log_file [log_file_name $argv0]
+} else {
+    log_file ethernet_${extra_config}_test_log
+}
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+if { $extra_config == "in_buffer" || $extra_config == "normal" || $extra_config == "usb" } {
+    send_log "\n#### Extra config is $extra_config.\n"
+} else {
+    send_log "\n#### This config $extra_config is not supported. Sorry.\n"
+    exit
+}
+
+if { [lindex $argv 1] == "usb" } {
+    append TITLE " (USB)"
+    set test_dev     $usb_eth_dev
+    set non_test_dev $eth_dev
+    set test_ip      "10.100.5.50"
+    set test_server_ip "10.100.5.174"
+} else {
+    set test_dev     $eth_dev
+    set non_test_dev $usb_eth_dev
+    set test_ip      $targetip
+    set test_server_ip $serverip
+}
+send_user "\n########## Test ethernet with $test_dev ##########\n"
+
+step "Start testing"
+
+set timeout 5
+
+spawn /bin/sh
+expect -re  $sh_prompt
+send -s  "ps aux | grep netserver | grep -v grep | head -1 \r"
+expect "\r"
+while 1 {
+   expect {
+      "netserver" {
+        break
+        }
+
+      timeout {
+        send -s  "netserver \r"
+        expect "Starting netserver"
+        break
+        }
+     }
+}
+
+expect -re  $sh_prompt
+set netserver_id $spawn_id
+set spawn_id $kermit_spawn_id
+
+set test_time  600
+set TransRate  0
+set Throughput 0
+
+incr case_num
+send "ifconfig $test_dev $test_ip up\r"
+while 1 {
+    expect {
+        -re "ifconfig:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "ifconfig $non_test_dev down\r"
+while 1 {
+    expect {
+        -re "No such device.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        -re "ifconfig:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "ifconfig\r"
+while 1 {
+    expect {
+        -re "$non_test_dev.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re "$test_ip.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 2000
+send "netperf -H $test_server_ip -t TCP_RR -l $test_time > netperf_tcp_rr\r"
+while 1 {
+    expect {
+        -re "netperf:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: ethernet TCP_RR test\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 2000
+send "netperf -H $test_server_ip -t TCP_STREAM -l $test_time  > netperf_tcp_stream\r"
+while 1 {
+    expect {
+        -re "netperf:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: ethernet TCP_STREAM test\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "cat netperf_tcp_rr\r"
+while 1 {
+    expect {
+        -re "$test_time\\\.\[0-9]{2} +(\[0-9]+\\\.\[0-9]{2})" {
+            set TransRate $expect_out(1,string)
+            expect -re $kernel_prompt
+            send_log "TransRate $expect_out(1,string)\n"
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "cat netperf_tcp_stream\r"
+while 1 {
+    expect {
+        -re "\\\.\[0-9]{2} +(\[0-9]+\\\.\[0-9]{2})" {
+            set Throughput $expect_out(1,string)
+            expect -re $kernel_prompt
+            send_log "Throughput $expect_out(1,string)\n"
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+send_user "Evaluate performance result.\n"
+if { $board_type == "BEAGLE" } {
+    set TRANSRATE_LIMIT  1900
+    set THROUGHPUT_LIMIT 50
+    set USB_TRANSRATE_LIMIT  1900
+    set USB_THROUGHPUT_LIMIT 4
+} elseif { $board_type == "PANDA" } {
+    set TRANSRATE_LIMIT  400
+    set THROUGHPUT_LIMIT 50
+    set USB_TRANSRATE_LIMIT  150
+    set USB_THROUGHPUT_LIMIT 1
+} elseif { $board_type == "BF609-EZKIT" } {
+    set TRANSRATE_LIMIT  1900
+    set THROUGHPUT_LIMIT 45
+    set USB_TRANSRATE_LIMIT  1900
+    set USB_THROUGHPUT_LIMIT 50
+} else {
+    set TRANSRATE_LIMIT  1900
+    set THROUGHPUT_LIMIT 50
+    set USB_TRANSRATE_LIMIT  1900
+    set USB_THROUGHPUT_LIMIT 50
+}
+
+if { [lindex $argv 1] == "usb" } {
+    if { $TransRate > $USB_TRANSRATE_LIMIT && $Throughput > $USB_THROUGHPUT_LIMIT } {
+        case_pass $case_num
+    } else {
+        case_fail $case_num
+    }
+} else {
+    if { $TransRate > $TRANSRATE_LIMIT && $Throughput > $THROUGHPUT_LIMIT } {
+        case_pass $case_num
+    } else {
+        case_fail $case_num
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

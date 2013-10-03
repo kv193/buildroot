@@ -1,0 +1,20 @@
+#!/usr/bin/expect
+
+cd $src_root
+spawn make image
+set timeout 300
+set make_status failure
+while 1 {
+    expect {
+        "Entering directory" { }
+        "Leaving directory" { set make_status success }
+        "Error" {set make_status failure }
+        "/bin/sh" { }
+        eof { break }
+    }
+}
+
+if { $make_status == "failure" } {
+    puts "ERROR: Error somewhere during make"
+    exit
+}

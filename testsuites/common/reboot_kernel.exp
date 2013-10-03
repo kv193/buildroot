@@ -1,0 +1,189 @@
+#!/usr/bin/expect
+
+# This file couldn't be indepently executed.
+# It is meant to be included into ***_test.exp scripts.
+
+set uboot_flag 0
+set timeout 8
+send "\r"
+while 1 {
+    expect {
+        -re "\[lL]ogin:" {
+            sleep .5
+            send "$login_user\r"
+            continue
+        }
+        -re "\[Pp]assword:" {
+            sleep .5
+            send "$password\r"
+            expect -re $kernel_prompt
+            break
+        }
+        -re $kernel_prompt {
+            break
+        }
+        -re $uboot_prompt {
+            set uboot_flag 1
+            break
+        }
+        timeout {
+            send_user "Fail: no kernel response"
+            exit
+        }
+    }
+}
+
+if { $uboot_flag == 1 } {
+    send -s "reset\r"
+    send_user "sending reset\n"
+} else {
+    send -s "reboot\r"
+    send_user "sending reboot\n"
+}
+
+set timeout 60
+while 1 {
+    expect {
+        -re "RAM: +(\[0-9]+) Mi?B" {
+            set ram_size $expect_out(1,string)
+            send_user "\nRAM size is $ram_size MB\n"
+        }
+        "Hit any key " {
+            send "\r"
+            break
+        }
+        timeout {
+            send_user "Fail to reboot the kernel into u-boot\n"
+            break
+        }
+    }
+}
+
+expect -re $uboot_prompt
+send -s "set console $console_args\r"
+expect -re $uboot_prompt
+send -s "set bootargs $bootargs\r"
+expect -re $uboot_prompt
+send -s "set serverip $serverip\r"
+expect -re $uboot_prompt
+send -s "set ipaddr $targetip\r"
+expect -re $uboot_prompt
+send -s "save\r"
+expect -re $uboot_prompt
+
+send -s "printenv ethaddr\r"
+while 1 {
+    expect {
+        -nocase -re "ethaddr=((\[0-9a-f]+:)\{5\}\[0-9a-f]\{2\}).*>" {
+            set target_mac $expect_out(1,string)
+            send_user "mac address=$target_mac\n"
+            break
+        }
+        timeout {
+            send_user "FAIL: get mac address\n"
+            break
+        }
+    }
+}
+
+set bootcmd bootm
+set bootaddr_low 0x1000000
+set bootaddr_high 0x2000000
+
+if { $ram_size <= 32 } {
+    set bootaddr $bootaddr_low
+} else {
+    set bootaddr $bootaddr_high
+}
+
+send -s "tftpboot $bootaddr $boot_image\r"
+while 1 {
+    expect {
+        -re "Bytes transferred = \[0-9]+ \\\((\[0-9a-fA-F]+) hex\\\).*$uboot_prompt" {
+            set image_size $expect_out(1,string)
+            send_user "Image size is $image_size\n"
+            break
+        }
+        timeout {
+            send_user "Fail to tftp download linux image."
+            #if tftpboot from high bootaddr failed, try to reload image from low bootaddr
+            break
+        }
+    }
+}
+
+send -s "run addip\r"
+expect -re $uboot_prompt
+
+set timeout 180
+send -s "$bootcmd $bootaddr\r"
+while 1 {
+    expect {
+        -re "(Trace:.*\r\n\r\n)|(Kernel panic)" {
+            expect -re $kernel_prompt
+            send_user "\nKernel booting up with dump info or panic\n"
+            send_log "\n$TITLE ............\[FAIL\]\n"
+            send_log "Test Period is: [ test_period ] seconds.\n"
+            exit
+        }
+
+        -re $kernel_prompt {
+            send_log "successful boot attempt"
+            break
+        }
+
+        timeout {
+            send_user "Reboot the linux kernel timeout!\n"
+            break
+        }
+    }
+}
+
+set timeout 10
+send -s "ifconfig $eth_dev $targetip\r"
+while 1 {
+    expect {
+        -re "$eth_dev: link up" {
+            sleep 2
+            break
+        }
+        timeout {
+            send_user "Ethernet may has been activated already!\n"
+            break
+        }
+    }
+}
+
+expect -re "$kernel_prompt"
+
+set timeout 10
+send -s "version\r"
+while 1 {
+    expect {
+        -re "Linux release (\[^\,]+)," {
+            set linux_version $expect_out(1,string)
+        }
+
+        -re "gcc version (.*)\r\n" {
+            set gcc_version $expect_out(1,string)
+        }
+
+        -re "user-dist: release (\[^\,]+)," {
+            set user-dist_version $expect_out(1,string)
+        }
+
+        -re "$kernel_prompt" {
+            sleep 2
+            break
+        }
+
+        timeout {
+            send_user "Fail to read version info!\n"
+            break
+        }
+    }
+}
+
+send_user "\nLinux version: $linux_version\n"
+send_user "GCC version: $gcc_version\n"
+send_user "user-dist version: ${user-dist_version}\n"

@@ -1,0 +1,82 @@
+#!/usr/bin/expect
+#
+# CRYPTO BFIN CRC driver test
+#
+# Usage:
+#   ./crypto_bfincrc_test.exp board_type
+#
+# Example:
+#   ./crypto_bfincrc_test.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+set case_num 0
+
+set timeout 5
+incr case_num
+send "dmesg |grep crc\r"
+while 1 {
+    expect {
+        -re "bfin-hmac-crc.*initialized.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        -re $kernel_prompt {
+            case_fail $case_num
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "dmesg |grep fail\r"
+while 1 {
+    expect {
+        -re "alg: hash.*bfin-hmac-crc.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "modprobe tcrypt mode=110\r"
+while 1 {
+    expect {
+        -re "tcrypt: one or more tests failed.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

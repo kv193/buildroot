@@ -1,0 +1,121 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+# Following make specific configuration for this case.
+
+#tee "Begin the interactive process of configuration"
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "libgcrypt.*BR2_PACKAGE_LIBGCRYPT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Show packages that are also provided by busybox.*BR2_PACKAGE_BUSYBOX_SHOW_OTHERS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "openssl.*BR2_PACKAGE_OPENSSL.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "boa.*BR2_PACKAGE_BOA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "pound.*BR2_PACKAGE_POUND.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+
+step "Make"
+
+source  make_kernel.exp
+
+cd $src_root/testsuites/common
+
+step "Copy linux"
+
+source   copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

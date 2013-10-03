@@ -1,0 +1,200 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source  ../common/board_info.exp
+
+set mode pio
+set spi_board_type normal
+
+if { $argc >= 2} {
+    set mode [lindex $argv 1]
+}
+if { $argc >= 3} {
+    set spi_board_type [lindex $argv 2]
+}
+
+log_file [log_file_name "$argv0.$mode.$spi_board_type"]
+
+send_log "Mode is $mode.\n"
+send_log "SPI board_type is $spi_board_type.\n"
+
+if { $board_type == "BF537-STAMP" } {
+    set board_file $src_root/linux/linux-kernel/arch/blackfin/mach-bf537/boards/stamp.c
+}
+
+if { $mode == "dma" } {
+    if [ catch {exec sed -i  /spi_flash_chip_info/{N\;s/0/1/}  $board_file} ] {
+        send_user "\nfail to modify board file\n"
+        send_user "$errorInfo\n"
+        exit
+    }
+}
+
+if { $board_type == "BF609-EZKIT" } {
+    set board_file $src_root/linux/linux-kernel/arch/blackfin/mach-bf609/boards/ezkit.c
+
+    if { $spi_board_type == "ext" } {
+        if [ catch {exec sed -i "/bfin_spi_board_info/,/chip_select/s/chip_select\[ =0-9]*/chip_select = 4/" $board_file} ] {
+            send_user "\nfail to modify board file\n"
+            send_user "$errorInfo\n"
+            exit
+        }
+    }
+}
+
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+
+step "Make config."
+
+source  make_default_config.exp
+
+# Following make specific configuration for this case.
+cd $src_root/testsuites/common
+source  config_cut_app.exp
+
+cd $src_root/testsuites/common
+source  make_mtd_config.exp
+
+cd $src_root/testsuites/snormtd
+source  make_spi_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Default bootloader kernel arguments.*CMDLINE_BOOL.*\\\[.*]" {
+             send -s "N\r"
+       }
+
+        -re "Initial RAM filesystem and RAM disk.*initramfs/initrd.*support.*BLK_DEV_INITRD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Initramfs source file.*INITRAMFS_SOURCE.*\\\[.*]" {
+            send "$src_root/output/images/rootfs.cpio\r"
+        }
+
+        -re "Generic uClinux RAM/ROM filesystem support.*MTD_UCLINUX.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Miscellaneous filesystems.*MISC_FILESYSTEMS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Journalling Flash File System v2.*JFFS2.*support.*JFFS2_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Second extended fs support.*EXT2_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+
+step "Make"
+
+source  make_kernel.exp
+
+cd $src_root/testsuites/common
+
+step "Copy linux"
+
+source   copy_image.exp
+
+#######################################################################
+## Build again for vmImage that doesn't include init ramfs.
+
+cd $src_root/testsuites/common
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Initial RAM filesystem and RAM disk.*initramfs/initrd.*support.*BLK_DEV_INITRD.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            break
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+if [ catch {exec cp $src_root/output/images/$compressed_kernel_only_image /tftpboot} ] {
+    send_user "$errorInfo\n"
+    exit
+}
+if [ catch {exec cp /tftpboot/$boot_image $src_root/output/images} ] {
+    send_user "$errorInfo\n"
+    exit
+}
+
+send_user "Ending $argv0\n"
+log_file

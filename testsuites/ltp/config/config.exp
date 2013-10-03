@@ -1,0 +1,9 @@
+#!/usr/bin/expect
+
+set ipaddr			"10.100.4.50"
+set serverip			"10.100.4.174"
+set cvs_server_addr		"10.99.29.20"
+
+set output_pin			2
+set send_slow			{1 .1}
+set ltp_test_prompt		"(\n#|/bin>) "

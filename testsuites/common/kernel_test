@@ -1,0 +1,1509 @@
+#!/bin/bash
+
+#################### Set up variables ####################
+WORKSPACE_ROOT=/home/test/workspace
+BOARD_CONFIG=BF537-STAMP-STD
+BOARD_TYPE=BF537-STAMP
+ARCH_TYPE=blackfin
+CPU=BF537
+REVISION=0.2
+BINARY_FORMAT=flat
+ALLOCATOR=slab
+ICACHE=on
+DCACHE=on
+POLICY=write_back
+UART_MODE=dma
+SMP=off
+MPU=off
+XENOMAI=off
+THIS_LOG=$WORKSPACE_ROOT/log/$BOARD_CONFIG
+
+if [ $# -lt 1 ] ; then
+    echo "Please input [ WORKSPACE_ROOT BOARD_CONFIG BOARD_TYPE ARCH_TYPE CPU REVISION BINARY_FORMAT ALLOCATOR ICACHE DCACHE POLICY UART_MODE SMP MPU XENOMAI THIS_LOG ]:"
+    echo
+    echo "BOARD_CONFIG :  BF537-STAMP-STD, BF537-STAMP-IDE,etc."
+    echo "BOARD_TYPE :    BF537-STAMP, BF533-STAMP, etc"
+    echo "ARCH_TYPE :     arm, blackfin, etc"
+    echo "CPU :           BF537, BF533, etc"
+    echo "REVISION:       default, 0.2, 0.3, etc"
+    echo "BINARY_FORMAT : flat, fdpic, shared-flat"
+    echo "ALLOCATOR:      slab, slob, slub"
+    echo "ICACHE :        on, off"
+    echo "DCACHE :        on, off"
+    echo "POLICY :        write_back, write_through"
+    echo "UART_MODE :     dma, pio"
+    echo "SMP :           on, off"
+    echo "MPU :           on, off"
+    echo "XENOMAI :       on, off"
+    echo "Example: ./kernel_test $WORKSPACE_ROOT $BOARD_CONFIG $BOARD_TYPE $ARCH_TYPE $CPU $REVISION $BINARY_FORMAT $ALLOCATOR $ICACHE $DCACHE $POLICY $UART_MODE $SMP $MPU $XENOMAI $THIS_LOG"
+    exit 1
+fi
+
+if [ -n "$1" ] ; then
+    WORKSPACE_ROOT=$1
+fi
+
+if [ -n "$2" ] ; then
+    BOARD_CONFIG=$2
+fi
+
+if [ -n "$3" ] ; then
+    BOARD_TYPE=$3
+fi
+
+if [ -n "$4" ] ; then
+    ARCH_TYPE=$4
+fi
+
+if [ -n "$5" ] ; then
+    CPU=$5
+fi
+
+if [ -n "$6" ] ; then
+    REVISION=$6
+fi
+
+if [ -n "$7" ] ; then
+    BINARY_FORMAT=$7
+fi
+
+if [ -n "$8" ] ; then
+    ALLOCATOR=$8
+fi
+
+if [ -n "$9" ] ; then
+    ICACHE=$9
+fi
+
+if [ -n "${10}" ] ; then
+    DCACHE=${10}
+fi
+
+if [ -n "${11}" ] ; then
+    POLICY=${11}
+fi
+
+if [ -n "${12}" ] ; then
+    UART_MODE=${12}
+fi
+
+if [ -n "${13}" ] ; then
+    SMP=${13}
+fi
+
+if [ -n "${14}" ] ; then
+    MPU=${14}
+fi
+
+if [ -n "${15}" ] ; then
+    XENOMAI=${15}
+fi
+
+if [ -n "${16}" ] ; then
+    THIS_LOG=${16}
+fi
+
+SRC_ROOT=$WORKSPACE_ROOT/src/kernel/label/$BOARD_CONFIG
+TESTSUITES_DIR=$SRC_ROOT/testsuites
+OUTPUT_DIR=$SRC_ROOT/output
+OUTPUT_BAK_DIR=$SRC_ROOT/output.bak
+KERNEL_CUSTOM_DIR=$OUTPUT_DIR/build/linux-custom
+IMAGE_DIR=$OUTPUT_DIR/images
+
+echo -e "# Test environment variables:
+# WORKSPACE_ROOT=$WORKSPACE_ROOT
+# BOARD_CONFIG=$BOARD_CONFIG
+# BOARD_TYPE=$BOARD_TYPE
+# ARCH_TYPE=$ARCH_TYPE
+# CPU=$CPU
+# REVISION=$REVISION
+# BINARY_FORMAT=$BINARY_FORMAT
+# ALLOCATOR=$ALLOCATOR
+# ICACHE=$ICACHE
+# DCACHE=$DCACHE
+# POLICY=$POLICY
+# UART_MODE=$UART_MODE
+# XENOMAI=$XENOMAI
+# SMP=$SMP
+# MPU=$MPU
+# SRC_ROOT=$SRC_ROOT
+# THIS_LOG=$THIS_LOG
+"
+
+cat <<EOF
+************ Tested user-dist svn info **************
+`cd $SRC_ROOT; echo -n "User-dist "; git log -1`
+************ Tested linux kernel git info ***********
+`cd $SRC_ROOT/linux/linux-kernel; echo -n "Kernel "; git log -1`
+************ Testsuites git info ********************
+`cd $TESTSUITES_DIR; echo -n "Testsuites "; git log -1`
+*****************************************************
+EOF
+
+#################### Check directories ####################
+
+if [ -d $OUTPUT_DIR ] ; then
+    rm -rf $OUTPUT_DIR
+fi
+
+if [ -d $OUTPUT_BAK_DIR ] ; then
+  rm -rf $OUTPUT_BAK_DIR
+fi
+
+if [ ! -d $SRC_ROOT ] ; then
+    exit 2
+fi
+
+if [ ! -d $THIS_LOG ] ; then
+    mkdir -p $THIS_LOG
+else
+    rm -rf $THIS_LOG/*
+fi
+
+
+#################### Set up arrays for all testcase ####################
+
+# Set RESET_BOARD to 1 if your target board could be restarted from host machine parallel port.
+RESET_BOARD=1
+BUILD_POLICY=1
+
+n=120
+
+AUTO_TESTCASE=( [0]="ethernet" [1]="bfindma" [2]="video_decoder" [3]="power_tftlcd" [4]="spimmc" [5]="qt" [6]="lmbench" [7]="nbench" [8]="dhrystone" [9]="whetstone" [10]="edn" [11]="dmacopy" [12]="earlyprintk" [13]="l1_module" [14]="l1_app" [15]="erestart" [16]="pthread" [17]="traps" [18]="module" [19]="boot_addr" [20]="strace" [21]="ramfs" [22]="stress" [23]="kgdb" [24]="sdiommc" [25]="null_point" [26]="watchdog" [27]="malloc_perf" [28]="fixed_code" [29]="l2_app" [30]="l2_module" [31]="sqlite" [32]="g729" [33]="mem_fragment" [34]="bfincrc" [35]="ethernet_in_buffer" [36]="reserve_mem" [37]="mmap" [38]="gptimer" [39]="nfs" [40]="smbfs" [41]="shared_flat"  [42]="string" [43]="usb_camera" [44]="audio_adau1761" [45]="pound" [46]="dll" [47]="linphone_adau1761" [48]="linkport" [49]="bluetooth" [50]="pnormtd" [51]="jffs2" [52]="jffs2_fs" [53]="camera_vs6624" [54]="canbus" [55]="ptp"  [56]="change_cpufreq" [57]="reprogram_clock" [58]="crypto_bfincrc" [59]="icc" [60]="mcapi" [61]="sram_alloc" [62]="power_ethernet" [63]="power_sdiommc" [64]="kgdb_uart" [65]="power_usbhost" [66]="power_audio" [67]="zflat" [68]="audio_ssm2603" [69]="power_usbdev" [70]="sigqueue" [71]="scratchpad_app_stack" [72]="rtc"  [73]="uart_wakeup"  [74]="xenomai" [75]="multichannel" [76]="debug_mmrs" [77]="NA" [78]="ethernet_wakeup" [79]="cfcard" [80]="ide_cdrom"  [81]="ide_harddisk" [82]="nand" [83]="adxl_i2c" [84]="adxl_spi" [85]="jtag_console" [86]="usbhost_isp1362" [87]="usbhost_isp1760" [88]="directfb"  [89]="i2ctwi"  [90]="power_adv7393"  [91]="mpu" [92]="tftlcd" [93]="otpmem" [94]="atapi_hd" [95]="mplayer" [96]="video_adv7393" [97]="" [98]="kgdb_smp" [99]="usbhost_sl811" [100]="nmi"  [101]="bluetoothuart" [102]="spi_coexistence" [103]="spimmc_interrupt" [104]="usbnet" [105]="audio_ad1836" [106]="linphone_ad1836" [107]="audio_ad1938" [108]="camera_mt9m114" [109]="video_encoder" [110]="ad5258" [$((n+1))]="serial" [$((n+2))]="ltp" [$((n+3))]="ethernet_usb" [$((n+4))]="timer" [$((n+5))]="usbdev" [$((n+6))]="snormtd" [$((n+7))]="usbhost_musb" [$((n+8))]="usbotg"  [$((n+9))]="serial_uart" [$((n+10))]="snormtd_ext" [$((n+11))]="xip" [$((n+12))]="oprofile" [$((n+13))]="NA" [$((n+14))]="NA" [$((n+15))]="no" [$((n+16))]="snormtd_dma" [$((n+17))]="NA" [$((n+18))]="NA" [$((n+19))]="NA" [$((n+20))]="snormtd_df" [$((n+21))]="NA"  [$((n+22))]="no" [$((n+23))]="NA" [$((n+24))]="NA" [$((n+25))]="NA" )
+
+AUTO_RUN_STATUS=( [0]="1" [1]="0" [2]="0" [3]="0" [4]="0" [5]="0" [6]="1" [7]="1" [8]="1" [9]="1" [10]="1" [11]="0" [12]="0"  [13]="1" [14]="1" [15]="1" [16]="1" [17]="1" [18]="1" [19]="1" [20]="1" [21]="1" [22]="1" [23]="1" [24]="0" [25]="1" [26]="1" [27]="1" [28]="1" [29]="0" [30]="0" [31]="1" [32]="1" [33]="1" [34]="0" [35]="1" [36]="1" [37]="1" [38]="0" [39]="1" [40]="1" [41]="1" [42]="1" [43]="0" [44]="0" [45]="0" [46]="1" [47]="0" [48]="0" [49]="0" [50]="0" [51]="0" [52]="0" [53]="0" [54]="0" [55]="0" [56]="1" [57]="1" [58]="0" [59]="0" [60]="0" [61]="1" [62]="0" [63]="0" [64]="0" [65]="0" [66]="0" [67]="1" [68]="0" [69]="0" [70]="1" [71]="1" [72]="0" [73]="0" [74]="0" [75]="0" [76]="0" [77]="0" [78]="0"  [79]="0" [80]="0" [81]="0" [82]="0" [83]="0" [84]="0"  [85]="0" [86]="0" [87]="0" [88]="0" [89]="0" [90]="0"  [91]="0" [92]="0" [93]="0" [94]="0" [95]="0" [96]="0" [97]="0" [98]="0" [99]="0" [100]="0" [101]="0" [102]="0" [103]="0" [104]="0" [105]="0" [106]="0" [107]="0" [108]="0" [109]="0" [110]="0" [$((n+1))]="1" [$((n+2))]="1" [$((n+3))]="0" [$((n+4))]="1" [$((n+5))]="0" [$((n+6))]="0" [$((n+7))]="0" [$((n+8))]="0" [$((n+9))]="0" [$((n+10))]="0" [$((n+11))]="0" [$((n+12))]="1" [$((n+13))]="0"  [$((n+14))]="0" [$((n+15))]="0"  [$((n+16))]="0" [$((n+17))]="0" [$((n+18))]="0" [$((n+19))]="0" [$((n+20))]="0" [$((n+21))]="0" [$((n+22))]="0"  [$((n+23))]="0" [$((n+24))]="0" [$((n+25))]="0" )
+
+MANUAL_TESTCASE=( [0]="bluetooth" [1]="hdmi" [2]="sdio_wifi" [3]="touchscreen" [4]="irda" [5]="generic_gpio" [6]="pfbutton" [7]="usb_wakeup" [8]="video_encoder" [9]="adp5520" [10]="awg"  [11]="ndso"  [12]="bluetoothalsa" [13]="canbus" [14]="i2ctwi_keyboard" [15]="i2ctwi_lcd" [16]="usb_camera" [17]="nand" [18]="ppifcd"  [19]="sport_uart" [20]="wireless" [21]="bfinppi" [22]="sport_spi" [23]="icc_resource" [24]="adp5588_qwerty" [25]="adp8860" [26]="rts_cts"  [27]="keypad" [28]="rotary" [29]="dsa" [30]="audio_ad73311" [31]="audio_adau1373" [32]="ptp" [33]="cap_touch" [$((n+1))]="no" )
+
+MANUAL_RUN_STATUS=( [0]="0" [1]="0" [2]="0" [3]="1" [4]="1" [5]="1" [6]="1" [7]="0" [8]="0" [9]="0" [10]="0"  [11]="0" [12]="0" [13]="0" [14]="0" [15]="0" [16]="0" [17]="0" [18]="0" [19]="0" [20]="0"  [21]="0" [22]="0" [23]="0" [24]="0" [25]="0" [26]="0" [27]="0" [28]="0" [29]="0" [30]="0" [31]="0" [32]="0" [33]="0" [$((n+1))]="0" )
+
+
+#################### Secific BOARD_CONFIG definition ####################
+
+if [ $BOARD_CONFIG = "BEAGLE-STD" ] ; then
+    BOARD_TYPE=BEAGLE
+
+    AUTO_RUN_STATUS[2]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[5]="1"; AUTO_RUN_STATUS[36]="0"; AUTO_RUN_STATUS[$((n+3))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[1]="1";
+
+elif [ $BOARD_CONFIG = "PANDA-STD" ] ; then
+    BOARD_TYPE=PANDA
+
+    AUTO_RUN_STATUS[2]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[5]="0"; AUTO_RUN_STATUS[36]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[1]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-ORIGIN" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[38]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-BASE" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[21]="1"; 
+
+elif [ $BOARD_CONFIG = "BF526-EZBRD-STD" ] ; then
+    BOARD_TYPE=BF526-EZBRD
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[26]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[51]="0"; AUTO_RUN_STATUS[55]="0"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[17]="1"; MANUAL_RUN_STATUS[19]="1";
+
+elif [ $BOARD_CONFIG = "BF518F-EZBRD-STD" ] ; then
+    BOARD_TYPE=BF518F-EZBRD
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[24]="1"; AUTO_RUN_STATUS[32]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[51]="0"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[63]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[$((n+2))]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[2]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[29]="1"; MANUAL_RUN_STATUS[32]="1";
+
+elif [ $BOARD_CONFIG = "BF533-STAMP-AD1836" ] ; then
+    BOARD_TYPE=BF533-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1";AUTO_RUN_STATUS[26]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="0"; AUTO_RUN_STATUS[105]="1"; AUTO_RUN_STATUS[106]="1"; AUTO_RUN_STATUS[$((n+11))]="0"; AUTO_RUN_STATUS[$((n+12))]="1";
+    MANUAL_RUN_STATUS[0]="0"; MANUAL_RUN_STATUS[3]="1"; MANUAL_RUN_STATUS[4]="1"; MANUAL_RUN_STATUS[5]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[22]="1"; MANUAL_RUN_STATUS[30]="1";
+
+elif [ $BOARD_CONFIG = "BF533-STAMP-ELF" ] ; then
+    BOARD_TYPE=BF533-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[26]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="0"; AUTO_RUN_STATUS[$((n+11))]="0"; AUTO_RUN_STATUS[$((n+12))]="1";
+    MANUAL_RUN_STATUS[0]="0"; MANUAL_RUN_STATUS[3]="1"; MANUAL_RUN_STATUS[4]="1"; MANUAL_RUN_STATUS[5]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[22]="1";
+
+elif [ $BOARD_CONFIG = "BF533-STAMP-STD" ] ; then
+    BOARD_TYPE=BF533-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[4]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[26]="0"; AUTO_RUN_STATUS[45]="1";AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="0"; AUTO_RUN_STATUS[103]="1"; AUTO_RUN_STATUS[$((n+11))]="0"; AUTO_RUN_STATUS[$((n+12))]="1";
+    MANUAL_RUN_STATUS[0]="0"; MANUAL_RUN_STATUS[3]="1"; MANUAL_RUN_STATUS[4]="1"; MANUAL_RUN_STATUS[5]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[22]="1";
+ 
+elif [ $BOARD_CONFIG = "BF533-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF533-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[12]="1";AUTO_RUN_STATUS[31]="0";AUTO_RUN_STATUS[32]="0";AUTO_RUN_STATUS[33]="0"; AUTO_RUN_STATUS[36]="0"; AUTO_RUN_STATUS[51]="0"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="0"; AUTO_RUN_STATUS[$((n+6))]="0"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="0"; MANUAL_RUN_STATUS[5]="1"; MANUAL_RUN_STATUS[6]="0"; MANUAL_RUN_STATUS[9]="0"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[22]="1";
+
+elif [ $BOARD_CONFIG = "BF538-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF538-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[51]="0"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[15]="1";
+
+elif [ $BOARD_CONFIG = "BF561-EZKIT-SMP" ] ; then
+    BOARD_TYPE=BF561-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[12]="1";AUTO_RUN_STATUS[13]="0"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[32]="0"; AUTO_RUN_STATUS[45]="1";AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[71]="0"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[98]="1"; AUTO_RUN_STATUS[100]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+
+    for i in `seq 0 $n`;
+    do
+        MANUAL_RUN_STATUS[$i]=0
+        MANUAL_RUN_STATUS[$((n+i))]="0"
+    done
+
+elif [ $BOARD_CONFIG = "BF561-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF561-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[2]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[32]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1";AUTO_RUN_STATUS[59]="1"; AUTO_RUN_STATUS[60]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[85]="1"; AUTO_RUN_STATUS[98]="1"; AUTO_RUN_STATUS[104]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+
+    for i in `seq 0 $n`;
+    do
+        MANUAL_RUN_STATUS[$i]=0
+        MANUAL_RUN_STATUS[$((n+i))]="0"
+    done
+
+elif [ $BOARD_CONFIG = "BF527-EZKIT-USBDEV" ] ; then
+    BOARD_TYPE=BF527-EZKIT-V2
+
+    for i in `seq 0 $n`;
+    do
+        AUTO_RUN_STATUS[$i]=0
+        AUTO_RUN_STATUS[$((n+i))]="0"
+    done
+    for i in `seq 0 $n`;
+    do
+        MANUAL_RUN_STATUS[$i]=0
+        MANUAL_RUN_STATUS[$((n+i))]="0"
+    done
+
+    AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[69]="1"; AUTO_RUN_STATUS[93]="1"; AUTO_RUN_STATUS[95]="1"; AUTO_RUN_STATUS[$((n+5))]="1"; AUTO_RUN_STATUS[$((n+8))]="1";
+
+elif [ $BOARD_CONFIG = "BF548-EZKIT-USBDEV" ] ; then
+    BOARD_TYPE=BF548-EZKIT
+
+    for i in `seq 0 $n`;
+    do
+        AUTO_RUN_STATUS[$i]=0
+        AUTO_RUN_STATUS[$((n+i))]="0"
+    done
+    for i in `seq 0 $n`;
+    do
+        MANUAL_RUN_STATUS[$i]=0
+        MANUAL_RUN_STATUS[$((n+i))]="0"
+    done
+
+    AUTO_RUN_STATUS[69]="1"; AUTO_RUN_STATUS[$((n+5))]="1"; AUTO_RUN_STATUS[$((n+8))]="1";
+
+elif [ $BOARD_CONFIG = "BF548-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF548-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[5]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[24]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[35]="0"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[52]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[63]="1"; AUTO_RUN_STATUS[64]="1"; AUTO_RUN_STATUS[65]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[82]="1"; AUTO_RUN_STATUS[83]="1"; AUTO_RUN_STATUS[88]="1"; AUTO_RUN_STATUS[92]="1"; AUTO_RUN_STATUS[93]="1"; AUTO_RUN_STATUS[94]="1"; AUTO_RUN_STATUS[95]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+7))]="1"; AUTO_RUN_STATUS[$((n+8))]="1"; AUTO_RUN_STATUS[$((n+9))]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[2]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[16]="1"; MANUAL_RUN_STATUS[26]="1"; MANUAL_RUN_STATUS[27]="1"; MANUAL_RUN_STATUS[28]="1";
+
+elif [ $BOARD_CONFIG = "BF527-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF527-EZKIT-V2
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1";AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[64]="1"; AUTO_RUN_STATUS[65]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[88]="1"; AUTO_RUN_STATUS[92]="1"; AUTO_RUN_STATUS[93]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+7))]="1"; [$((n+8))]="1"; AUTO_RUN_STATUS[$((n+9))]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[17]="1"; MANUAL_RUN_STATUS[27]="1"; MANUAL_RUN_STATUS[28]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-MPU" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[91]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[33]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-ADXL" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[84]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[33]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-AD1938" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[75]="1"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[107]="1"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[33]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-LCD" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[88]="1"; AUTO_RUN_STATUS[89]="1"; AUTO_RUN_STATUS[92]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[30]="1";MANUAL_RUN_STATUS[33]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-SNORMTD" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[$((n+11))]="1"; AUTO_RUN_STATUS[$((n+20))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[33]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-MMC" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[4]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[101]="1"; AUTO_RUN_STATUS[102]="1"; AUTO_RUN_STATUS[103]="1"; AUTO_RUN_STATUS[104]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[21]="1"; MANUAL_RUN_STATUS[22]="1"; MANUAL_RUN_STATUS[24]="1"; MANUAL_RUN_STATUS[25]="1"; MANUAL_RUN_STATUS[26]="1"
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-STD" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[84]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[21]="1"; MANUAL_RUN_STATUS[22]="1"; MANUAL_RUN_STATUS[24]="1"; MANUAL_RUN_STATUS[25]="1"; MANUAL_RUN_STATUS[26]="1"
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-AD1836" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[38]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[64]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[75]="1"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[105]="1"; AUTO_RUN_STATUS[106]="1"; AUTO_RUN_STATUS[$((n+9))]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[20]="1"; MANUAL_RUN_STATUS[21]="1"; MANUAL_RUN_STATUS[31]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-SPINET" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[38]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[68]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[78]="1"; AUTO_RUN_STATUS[110]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[21]="1"; MANUAL_RUN_STATUS[22]="1"; MANUAL_RUN_STATUS[24]="1"; MANUAL_RUN_STATUS[25]="1"; MANUAL_RUN_STATUS[26]="1"
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-ADV7393" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[85]="1"; AUTO_RUN_STATUS[86]="1"; AUTO_RUN_STATUS[90]="1"; AUTO_RUN_STATUS[96]="1"; AUTO_RUN_STATUS[99]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1";
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-CF" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[45]="1";AUTO_RUN_STATUS[50]="1";AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[79]="1"; AUTO_RUN_STATUS[80]="1"; AUTO_RUN_STATUS[81]="1"; AUTO_RUN_STATUS[82]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+11))]="0"; AUTO_RUN_STATUS[$((n+16))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1"; MANUAL_RUN_STATUS[19]="1"; MANUAL_RUN_STATUS[20]="1"
+
+elif [ $BOARD_CONFIG = "BF537-STAMP-USB176x" ] ; then
+    BOARD_TYPE=BF537-STAMP
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[53]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[72]="1"; AUTO_RUN_STATUS[73]="1"; AUTO_RUN_STATUS[74]="0"; AUTO_RUN_STATUS[76]="1"; AUTO_RUN_STATUS[87]="1"; AUTO_RUN_STATUS[$((n+11))]="0";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[9]="1"; MANUAL_RUN_STATUS[10]="1"; MANUAL_RUN_STATUS[11]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[13]="1"; MANUAL_RUN_STATUS[14]="1"; MANUAL_RUN_STATUS[15]="1"; MANUAL_RUN_STATUS[18]="1";
+
+elif [ $BOARD_CONFIG = "BF609-EZKIT-STD" ] ; then
+    BOARD_TYPE=BF609-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[24]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[34]="1"; AUTO_RUN_STATUS[38]="1"; AUTO_RUN_STATUS[39]="1"; AUTO_RUN_STATUS[45]="1"; AUTO_RUN_STATUS[49]="1"; AUTO_RUN_STATUS[50]="1"; AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[52]="1"; AUTO_RUN_STATUS[58]="1"; AUTO_RUN_STATUS[59]="1"; AUTO_RUN_STATUS[60]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[63]="1"; AUTO_RUN_STATUS[64]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[68]="1"; AUTO_RUN_STATUS[76]="1"; 
+    AUTO_RUN_STATUS[$((n+4))]="1"; AUTO_RUN_STATUS[$((n+6))]="0"; AUTO_RUN_STATUS[$((n+9))]="1"; AUTO_RUN_STATUS[$((n+10))]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[3]="1"; MANUAL_RUN_STATUS[7]="1"; MANUAL_RUN_STATUS[12]="1"; MANUAL_RUN_STATUS[23]="1";
+
+elif [ $BOARD_CONFIG = "BF609-EZKIT-USBDEV" ] ; then
+    BOARD_TYPE=BF609-EZKIT
+
+    for i in `seq 0 $n`;
+    do
+        AUTO_RUN_STATUS[$i]=0
+        AUTO_RUN_STATUS[$((n+i))]="0"
+    done
+    for i in `seq 0 $n`;
+    do
+        MANUAL_RUN_STATUS[$i]=0
+        MANUAL_RUN_STATUS[$((n+i))]="0"
+    done
+
+    AUTO_RUN_STATUS[44]="1"; AUTO_RUN_STATUS[47]="1"; AUTO_RUN_STATUS[66]="1"; AUTO_RUN_STATUS[69]="1"; AUTO_RUN_STATUS[$((n+5))]="1"; AUTO_RUN_STATUS[$((n+8))]="1";
+
+elif [ $BOARD_CONFIG = "BF609-EZKIT-USBHOST" ] ; then
+    BOARD_TYPE=BF609-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[3]="1"; AUTO_RUN_STATUS[5]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[24]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[34]="1"; AUTO_RUN_STATUS[39]="1"; AUTO_RUN_STATUS[43]="1"; AUTO_RUN_STATUS[48]="1"; AUTO_RUN_STATUS[58]="1"; AUTO_RUN_STATUS[62]="1"; AUTO_RUN_STATUS[63]="1"; AUTO_RUN_STATUS[65]="1"; AUTO_RUN_STATUS[88]="1"; AUTO_RUN_STATUS[92]="1"; AUTO_RUN_STATUS[95]="1"; AUTO_RUN_STATUS[108]="1";
+    AUTO_RUN_STATUS[$((n+7))]="1"; AUTO_RUN_STATUS[$((n+8))]="1"
+    MANUAL_RUN_STATUS[0]="1"; MANUAL_RUN_STATUS[3]="1"; MANUAL_RUN_STATUS[7]="1";
+
+elif [ $BOARD_CONFIG = "BF609-EZKIT-CAN" ] ; then
+    BOARD_TYPE=BF609-EZKIT
+
+    AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[34]="1"; AUTO_RUN_STATUS[39]="1"; AUTO_RUN_STATUS[50]="1"; AUTO_RUN_STATUS[51]="0"; AUTO_RUN_STATUS[52]="0"; AUTO_RUN_STATUS[54]="1"; AUTO_RUN_STATUS[55]="1"; AUTO_RUN_STATUS[59]="1"; AUTO_RUN_STATUS[60]="1"; 
+    AUTO_RUN_STATUS[$((n+4))]="1"; AUTO_RUN_STATUS[$((n+6))]="1";
+    MANUAL_RUN_STATUS[23]="1";
+
+elif [ $BOARD_CONFIG = "BF609-EZKIT-FLAT" ] ; then
+    BOARD_TYPE=BF609-EZKIT
+
+    AUTO_RUN_STATUS[0]="1"; AUTO_RUN_STATUS[1]="1"; AUTO_RUN_STATUS[2]="1"; AUTO_RUN_STATUS[11]="1"; AUTO_RUN_STATUS[12]="1"; AUTO_RUN_STATUS[29]="1"; AUTO_RUN_STATUS[30]="1"; AUTO_RUN_STATUS[34]="1"; AUTO_RUN_STATUS[35]="0"; AUTO_RUN_STATUS[39]="1"; AUTO_RUN_STATUS[45]="0"; AUTO_RUN_STATUS[50]="1"; AUTO_RUN_STATUS[51]="1"; AUTO_RUN_STATUS[52]="1"; AUTO_RUN_STATUS[58]="1"; AUTO_RUN_STATUS[60]="1"; AUTO_RUN_STATUS[109]="1";
+    AUTO_RUN_STATUS[$((n+4))]="1"; AUTO_RUN_STATUS[$((n+6))]="1"; AUTO_RUN_STATUS[$((n+11))]="1";
+
+else
+    echo "Please define the needed BOARD_CONFIG. It doesn't exist now!"
+    exit
+fi
+
+#################### List the tests to be run on the machine ####################
+
+testcase_list=(${AUTO_TESTCASE[@]:0} ${MANUAL_TESTCASE[@]:0})
+run_status_list=(${AUTO_RUN_STATUS[@]:0} ${MANUAL_RUN_STATUS[@]:0})
+
+p1=${#AUTO_TESTCASE[*]}
+q1=${#MANUAL_TESTCASE[*]}
+p=${#testcase_list[*]}
+q=${#run_status_list[*]}
+
+echo "Auto testcase $p1 ,manual testcase $q1."
+echo "Testcase list $p ,run status list $q."
+t=0
+if [ $p -eq $q ] ; then
+    echo "**********************************************"
+    echo "All the testcases that run on this machine:"
+    echo "(Auto test and manual test.)"
+    echo "*** Auto test *** "
+    for i in `seq 0 $p`
+    do
+        if [ ! -z ${run_status_list[$i]} ] && [ ${run_status_list[$i]} == 1 ] ; then
+            if [ $i -ge $p1 ] && [ $t != "1" ] ; then
+                echo
+                echo "*** Manual test *** "
+		t=1
+            fi
+            echo "$i ${testcase_list[$i]}"
+
+        fi
+    done
+    echo "**********************************************"
+fi
+
+
+#################### Preparation before test ####################
+
+if [ $ARCH_TYPE == "arm" ] ; then
+    TOOLCHAIN_DIR=/opt/arm/bin
+    CROSS_COMPILER=$TOOLCHAIN_DIR/arm-none-linux-gnueabi-gcc
+elif [ $ARCH_TYPE == "blackfin" ] ; then
+    TOOLCHAIN_DIR=/opt/uClinux/bfin-uclinux/bin:/opt/uClinux/bfin-elf/bin:/opt/uClinux/bfin-linux-uclibc/bin
+    CROSS_COMPILER=/opt/uClinux/bfin-uclinux/bin/bfin-uclinux-gcc
+fi
+export PATH=$PATH:$TOOLCHAIN_DIR
+$CROSS_COMPILER -v
+echo
+
+
+########################### Functions ###########################
+
+use_output_bak () {
+    if [ -d $OUTPUT_DIR ] ; then
+        rm -rf $OUTPUT_DIR
+    fi
+
+    cp -a $OUTPUT_BAK_DIR $OUTPUT_DIR
+
+    # make sure staff in output won't be patched again
+    for sign in .*downloaded .*extracted .*unpacked .*patched .*configured
+    do
+	for FILE in `find $OUTPUT_DIR -name $sign`
+	do
+		touch $FILE
+  		#echo "touch $FILE"
+	done
+    done
+
+}
+
+make_clean () {
+    cd $SRC_ROOT
+    make clean
+}
+
+# copy image and config files after each test
+copy_image_config () {
+    if [ -n "$1" ] ; then
+        post_fix=$1
+    else
+        post_fix=unknow
+    fi
+
+    if [ -f $IMAGE_DIR/uImage ] ; then
+        cp $IMAGE_DIR/uImage $THIS_LOG/uImage.$post_fix
+    fi
+
+    cp $KERNEL_CUSTOM_DIR/.config $THIS_LOG/config.kernel.$post_fix
+    cp $SRC_ROOT/.config $THIS_LOG/config.user.$post_fix
+}
+
+# Delete some internel packages to make sure it's latest version to be downloaded.
+rm $SRC_ROOT/dl/*HEAD*
+
+#################### BUILD POLICY ####################
+
+if [ $BUILD_POLICY -eq 1  ] ; then
+    echo "Running build policy"
+
+    cd $TESTSUITES_DIR/policy
+    echo "./build_policy_kernel.exp $BOARD_TYPE $CPU $REVISION $BINARY_FORMAT $ALLOCATOR $ICACHE $DCACHE $POLICY $UART_MODE $SMP $MPU $XENOMAI >/dev/null  2>&1"
+    ./build_policy_kernel.exp $BOARD_TYPE $CPU $REVISION $BINARY_FORMAT $ALLOCATOR $ICACHE $DCACHE $POLICY $UART_MODE $SMP $MPU $XENOMAI >/dev/null  2>&1
+
+    # Back up image, configs and log to current log directory
+    copy_image_config "policy"
+    mv $TESTSUITES_DIR/policy/build_policy_kernel_log $THIS_LOG
+
+    # Back up configs to source directory for regression test usage
+    rm $SRC_ROOT/config.kernel.policy $SRC_ROOT/config.user.policy
+    cp $THIS_LOG/config.kernel.policy $THIS_LOG/config.user.policy $SRC_ROOT/
+
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "Kernel image fails to generate. Terminate test!"
+        tail -50 ./build_policy_kernel_log
+        make_clean
+        exit 3
+    fi
+
+    # back up compiled stuff for future build
+    cd $KERNEL_CUSTOM_DIR
+    make clean > /dev/null 2>&1
+    rm -fr $IMAGE_DIR/uImage
+    cp -fr $OUTPUT_DIR $OUTPUT_BAK_DIR
+
+    sleep 30
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+    sleep 10
+
+fi
+
+
+################################# AUTOMATED TESTING #################################
+for i in `seq 0 $n`
+do
+
+    if [ -z ${AUTO_TESTCASE[$i]} ] ; then
+        continue
+    fi
+
+    if [ ${AUTO_RUN_STATUS[$i]} -eq 1  ] ; then
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        echo  "Start testing ${AUTO_TESTCASE[$i]}..."
+
+        if [ ${AUTO_TESTCASE[$i]} == "ethernet_in_buffer" ] ; then
+            TESTCASE_DIR=ethernet
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep linphone` ] ; then
+            TESTCASE_DIR=linphone
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep audio_` ] ; then
+            TESTCASE_DIR=audio
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep usbhost_` ] ; then
+            TESTCASE_DIR=usbhost
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep ide_` ] ; then
+            TESTCASE_DIR=ide
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep camera_` ] ; then
+            TESTCASE_DIR=camera
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep kgdb` ] ; then
+            TESTCASE_DIR=kgdb
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep adxl` ] ; then
+            TESTCASE_DIR=adxl
+        elif [ ${AUTO_TESTCASE[$i]} == "jffs2_fs" ] ; then
+            TESTCASE_DIR=jffs2
+        elif [ ${AUTO_TESTCASE[$i]} == "spimmc_interrupt" ] ; then
+            TESTCASE_DIR=spimmc
+        else
+            TESTCASE_DIR=${AUTO_TESTCASE[$i]}
+        fi
+        cd $TESTSUITES_DIR/$TESTCASE_DIR
+
+        if [ ${AUTO_RUN_STATUS[44]} -eq 1  ] ; then
+            audio_dev="audio_adau1761"
+        elif [ ${AUTO_RUN_STATUS[68]} -eq 1  ] ; then
+            audio_dev="audio_ssm2603"
+        elif [ ${AUTO_RUN_STATUS[105]} -eq 1  ] ; then
+            audio_dev="audio_ad1836"
+        elif [ ${AUTO_RUN_STATUS[107]} -eq 1  ] ; then
+            audio_dev="audio_ad1938"
+        fi
+
+        if [ ${AUTO_TESTCASE[$i]} == "ethernet_in_buffer" ] ; then
+            ./build_ethernet_kernel.exp $BOARD_TYPE in_buffer >/dev/null 2>&1
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep audio_` ] ; then
+            ./build_audio_kernel.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep linphone` ] ; then
+            ./build_linphone_kernel.exp $BOARD_TYPE $audio_dev >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "power_audio" ] ; then
+            ./build_power_audio_kernel.exp $BOARD_TYPE $audio_dev > /dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "multichannel" ] ; then
+            ./build_multichannel_kernel.exp $BOARD_TYPE $audio_dev >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "usbhost_isp1362" ] ; then
+            ./build_usbhost_kernel.exp $BOARD_TYPE usbhost_isp1362 >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "usbhost_isp1760" ] ; then
+            ./build_usbhost_kernel.exp $BOARD_TYPE usbhost_isp1760 >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "usbhost_sl811" ] ; then
+            ./build_usbhost_kernel.exp $BOARD_TYPE usbhost_sl811 >/dev/null 2>&1
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep camera_` ] ; then
+            ./build_camera_kernel.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "kgdb_uart" ] ; then
+            ./build_kgdb_kernel.exp $BOARD_TYPE uart >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "kgdb_smp" ] ; then
+            ./build_kgdb_kernel.exp $BOARD_TYPE ethernet SMP >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "adxl_i2c" ] ; then
+            ./build_adxl_kernel.exp $BOARD_TYPE i2c >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "adxl_spi" ] ; then
+            ./build_adxl_kernel.exp $BOARD_TYPE spi >/dev/null 2>&1
+        elif [ ${AUTO_TESTCASE[$i]} == "spimmc_interrupt" ] ; then
+            ./build_spimmc_kernel.exp $BOARD_TYPE interrupt >/dev/null 2>&1
+        else
+            ./build_${AUTO_TESTCASE[$i]}_kernel.exp $BOARD_TYPE >/dev/null 2>&1
+        fi
+
+
+        # Start testing after build kernel successfully
+        if [ ! -f $IMAGE_DIR/uImage ]
+        then
+            echo "$0:   Error, failed."
+            tail -50 ./build_${AUTO_TESTCASE[$i]}*_kernel_log
+        else
+            if [ $RESET_BOARD -eq 1 ] ; then
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                sleep 10
+            fi
+
+            cd $TESTSUITES_DIR/$TESTCASE_DIR
+
+            if [ ${AUTO_TESTCASE[$i]} == "jffs2" ] || [ ${AUTO_TESTCASE[$i]} == "jffs2_fs" ] ; then
+                ./flash_images.exp  $BOARD_TYPE  >/dev/null  2>&1
+                sleep 10
+            fi
+
+            if [ ${AUTO_TESTCASE[$i]} == "ethernet_in_buffer" ] ; then
+                ./ethernet_test.exp $BOARD_TYPE in_buffer >/dev/null 2>&1
+            elif [ `echo ${AUTO_TESTCASE[$i]}|grep linphone` ] ; then
+                ./linphone_test.exp $BOARD_TYPE $audio_dev >/dev/null 2>&1
+            elif [ `echo ${AUTO_TESTCASE[$i]}|grep audio_` ] ; then
+                ./audio_test.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+                if [ $RESET_BOARD -eq 1 ] ; then
+                    cd $TESTSUITES_DIR/common
+                    ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                    sleep 10
+                fi
+
+                cd $TESTSUITES_DIR/$TESTCASE_DIR
+                ./audio_data_test.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+                ./snd2fftw_test.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+            elif [ `echo ${AUTO_TESTCASE[$i]}|grep power` ] ; then
+                if [ ${AUTO_TESTCASE[$i]} == "power_audio" ] ; then
+                    ./power_audio_test.exp $BOARD_TYPE $audio_dev standby > /dev/null 2>&1
+                else
+                    ./${AUTO_TESTCASE[$i]}_test.exp $BOARD_TYPE standby >/dev/null 2>&1
+                fi
+
+                if [ $RESET_BOARD -eq 1 ] ; then
+                    cd $TESTSUITES_DIR/common
+                    ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                    sleep 10
+                fi
+
+                cd $TESTSUITES_DIR/$TESTCASE_DIR
+                if [ ${AUTO_TESTCASE[$i]} == "power_audio" ] ; then
+                    ./power_audio_test.exp $BOARD_TYPE $audio_dev mem > /dev/null 2>&1
+                else
+                    ./${AUTO_TESTCASE[$i]}_test.exp $BOARD_TYPE mem >/dev/null 2>&1
+                fi
+            elif [ ${AUTO_TESTCASE[$i]} == "multichannel" ] ; then
+                ./multichannel_test.exp $BOARD_TYPE $audio_dev >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "usbhost_isp1362" ] ; then
+                ./usbhost_test.exp $BOARD_TYPE usbhost_isp1362 >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "usbhost_isp1760" ] ; then
+                ./usbhost_test.exp $BOARD_TYPE usbhost_isp1760 >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "usbhost_sl811" ] ; then
+                ./usbhost_test.exp $BOARD_TYPE usbhost_sl811 >/dev/null 2>&1
+            elif [ `echo ${AUTO_TESTCASE[$i]}|grep camera_` ] ; then
+                ./camera_test.exp $BOARD_TYPE ${AUTO_TESTCASE[$i]} >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "kgdb_uart" ] ; then
+                ./kgdb_test.exp $BOARD_TYPE uart >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "kgdb_smp" ] ; then
+                ./kgdb_test.exp $BOARD_TYPE ethernet SMP >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "adxl_i2c" ] ; then
+                ./adxl_test.exp $BOARD_TYPE i2c >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "adxl_spi" ] ; then
+                ./adxl_test.exp $BOARD_TYPE spi >/dev/null 2>&1
+            elif [ ${AUTO_TESTCASE[$i]} == "spimmc_interrupt" ] ; then
+                ./spimmc_test.exp $BOARD_TYPE interrupt >/dev/null 2>&1
+            else
+                ./${AUTO_TESTCASE[$i]}_test.exp $BOARD_TYPE >/dev/null 2>&1
+            fi
+        fi
+
+
+        # backup all test results (configs, images and logs)
+        if [ ${AUTO_TESTCASE[$i]} == "sdiommc" ] || [ `echo ${AUTO_TESTCASE[$i]}|grep spimmc` ] || [ ${AUTO_TESTCASE[$i]} == "kgdb_uart" ] || [ ${AUTO_TESTCASE[$i]} == "kgdb_smp" ]; then
+            cp $IMAGE_DIR/vmImage $THIS_LOG/vmImage.${AUTO_TESTCASE[$i]}
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep jffs2` ] ; then
+            cp $IMAGE_DIR/vmImage $THIS_LOG/vmImage.${AUTO_TESTCASE[$i]}
+            cp $IMAGE_DIR/rootfs.jffs2 $THIS_LOG/rootfs.jffs2.${AUTO_TESTCASE[$i]}
+            cp $TESTSUITES_DIR/$TESTCASE_DIR/flash_images_log $THIS_LOG/flash_images_log.${AUTO_TESTCASE[$i]}
+        elif [ `echo ${AUTO_TESTCASE[$i]}|grep audio_` ] ; then
+            mv $TESTSUITES_DIR/audio/audio_data $THIS_LOG/audio_data.${AUTO_TESTCASE[$i]}
+        fi
+
+        if [ `echo ${AUTO_TESTCASE[$i]}|grep camera_` ] ; then
+            mv $TESTSUITES_DIR/$TESTCASE_DIR/${AUTO_TESTCASE[$i]}.avi $THIS_LOG
+            mv $TESTSUITES_DIR/$TESTCASE_DIR/${AUTO_TESTCASE[$i]}.yuv $THIS_LOG
+        fi
+
+        if [ ${AUTO_TESTCASE[$i]} == "usb_camera" ] ; then
+            mv $TESTSUITES_DIR/$TESTCASE_DIR/usb_camera.mp4 $THIS_LOG
+        fi
+
+        if [ ${AUTO_TESTCASE[$i]} == "power_audio" ] ; then
+            copy_image_config "power_${audio_dev}"
+        else
+            copy_image_config "${AUTO_TESTCASE[$i]}"
+        fi
+
+        mv $TESTSUITES_DIR/$TESTCASE_DIR/*_log  $THIS_LOG
+
+
+        # If bellow test fails, patch is still cleaned here.
+        if [ ${AUTO_TESTCASE[$i]} == "dhrystone" ] || [ ${AUTO_TESTCASE[$i]} == "whetstone" ] ; then
+            cd $SRC_ROOT/package/
+            git checkout .
+        fi
+
+        echo  "End testing ${AUTO_TESTCASE[$i]}..."
+        sleep 10
+
+        if [ $RESET_BOARD -eq 1 ] ; then
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            sleep 10
+        fi
+
+    fi
+
+done
+
+
+######################################### SERIAL TEST #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+1))]} -eq 1 ] ; then
+    echo "Start testing serial..."
+
+    rm -fr /tftpboot/uImage.serial*
+
+    use_output_bak
+    cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+    cd $TESTSUITES_DIR/serial
+    ./build_serial_kernel.exp $BOARD_TYPE >/dev/null 2>&1
+
+    # run this test only when two images exist
+    if [ -f /tftpboot/uImage.serial.no_tty ] ; then
+        cp /tftpboot/uImage.serial.no_tty $THIS_LOG
+        ./serial_test.exp $BOARD_TYPE >/dev/null 2>&1
+    else
+        echo "$0:   Error, failed."
+        tail -50 ./build_serial_kernel_log
+    fi
+
+    copy_image_config "serial"
+    mv $TESTSUITES_DIR/serial/*_log  $THIS_LOG
+
+    echo  "End testing serial..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+fi
+
+######################################### SERIAL UART TEST #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+9))]} -eq 1 ] ; then
+    echo "Start testing serial uart..."
+
+    rm -fr /tftpboot/uImage.serial*
+
+    use_output_bak
+    cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+    cd $TESTSUITES_DIR/serial
+    ./build_uart_kernel.exp $BOARD_TYPE serial_uart >/dev/null 2>&1
+
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_uart_kernel_log
+    else
+       ./uart_test.exp $BOARD_TYPE serial_uart >/dev/null 2>&1
+    fi
+
+    copy_image_config "serial_uart"
+    mv $TESTSUITES_DIR/serial/*_log  $THIS_LOG
+
+    echo  "End testing serial uart..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+fi
+
+######################################### TIMER TEST #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+4))]} -eq 1 ] ; then
+    echo "Start testing timer..."
+
+    rm -fr /tftpboot/uImage.timer*
+
+    use_output_bak
+    cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+    cd $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+4))]}
+
+    # Test timer freqency 100
+    ./build_${AUTO_TESTCASE[$((n+4))]}_kernel.exp $BOARD_TYPE 100 >/dev/null 2>&1
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_${AUTO_TESTCASE[$((n+4))]}_kernel_log
+    else
+        ./${AUTO_TESTCASE[$((n+4))]}_test.exp $BOARD_TYPE 100 >/dev/null 2>&1
+    fi
+    copy_image_config "timer100"
+    mv $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+4))]}/*_log  $THIS_LOG
+
+    # Test timer freqency 250
+    ./build_${AUTO_TESTCASE[$((n+4))]}_kernel.exp $BOARD_TYPE 250 >/dev/null 2>&1
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_${AUTO_TESTCASE[$((n+4))]}_kernel_log
+    else
+        ./${AUTO_TESTCASE[$((n+4))]}_test.exp $BOARD_TYPE 250 >/dev/null 2>&1
+    fi
+    copy_image_config "timer250"
+    mv $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+4))]}/*_log  $THIS_LOG
+
+    # Test timer freqency 1000
+    ./build_${AUTO_TESTCASE[$((n+4))]}_kernel.exp $BOARD_TYPE 1000 >/dev/null 2>&1
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_${AUTO_TESTCASE[$((n+4))]}_kernel_log
+    else
+        ./${AUTO_TESTCASE[$((n+4))]}_test.exp $BOARD_TYPE 1000 >/dev/null 2>&1
+    fi
+    copy_image_config "timer1000"
+    mv $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+4))]}/*_log  $THIS_LOG
+
+    echo  "End testing timer..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+fi
+
+
+######################################### ETHERNET USB TEST #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+3))]} -eq 1 ] ; then
+    echo "Start testing ethernet_usb..."
+
+    use_output_bak
+    cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+    cd $TESTSUITES_DIR/ethernet
+    ./build_ethernet_kernel.exp $BOARD_TYPE >/dev/null 2>&1
+    mv build_ethernet_kernel_log build_ethernet_usb_kernel_log
+
+    if [ ! -f $IMAGE_DIR/uImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_ethernet_usb_kernel_log
+    else
+        ./ethernet_test.exp $BOARD_TYPE usb >/dev/null 2>&1
+        mv ethernet_test_log ethernet_usb_test_log
+    fi
+
+    copy_image_config "ethernet_usb"
+    mv $TESTSUITES_DIR/ethernet/*_log  $THIS_LOG
+
+    echo  "End testing ethernet_usb..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+fi
+
+
+##################################### USB GADGET DEVICE TEST #####################################
+
+if [ ${AUTO_RUN_STATUS[$((n+5))]} -eq 1 ] ; then
+    TARGET_MUSB_MODE="dma pio"
+    for config in $TARGET_MUSB_MODE
+    do
+
+        CONFIG=`echo $config|tr 'a-z' 'A-Z'`
+        echo "Start testing usb gadget device in $config mode..."
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        cd $TESTSUITES_DIR/usbdev
+        ./build_usbdev_kernel.exp $BOARD_TYPE $config >/dev/null 2>&1
+
+        if [ ! -f $IMAGE_DIR/uImage ]
+        then
+            echo "$0:   Error, failed."
+            tail -50 ./build_usbdev_${config}_kernel_log
+        else
+            if [ $RESET_BOARD -eq 1 ] ; then
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                sleep 10
+            fi
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_zero_control_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_fs_control_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_zero_bulk_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_fs_bulk_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_ethernet_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_serial_generic_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_serial_linuxACM_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            sleep 30
+            cd $TESTSUITES_DIR/usbdev
+            ./gadget_storage_ram_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+
+            if [ $BOARD_TYPE != "BF527-EZKIT" ] && [ $BOARD_TYPE != "BF527-EZKIT-V2" ] ; then
+                sleep 30
+                cd $TESTSUITES_DIR/usbdev
+                ./gadget_storage_hd_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            fi
+
+            if [ $BOARD_TYPE == "BF609-EZKIT" ] ; then
+                sleep 30
+                cd $TESTSUITES_DIR/usbdev
+                ./gadget_audio_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            fi
+
+        fi
+
+        copy_image_config "usbdev.$config"
+        mv $TESTSUITES_DIR/usbdev/*_log  $THIS_LOG
+
+        echo "End testing usb gadget device..."
+        sleep 10
+
+        if [ $RESET_BOARD -eq 1 ] ; then
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            sleep 10
+        fi
+
+    done
+fi
+
+
+##################################### USB HOST TEST #####################################
+
+if [ ${AUTO_RUN_STATUS[$((n+7))]} -eq 1 ] ; then
+    TARGET_MUSB_MODE="dma pio"
+    for config in $TARGET_MUSB_MODE
+    do
+
+        CONFIG=`echo $config|tr 'a-z' 'A-Z'`
+        echo "Start testing musb host device in $config mode..."
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        cd $TESTSUITES_DIR/usbhost
+        ./build_usbhost_kernel.exp $BOARD_TYPE musb $config >/dev/null 2>&1
+
+        if [ ! -f $IMAGE_DIR/uImage ]
+        then
+            echo "$0:   Error, failed."
+            tail -50 ./build_usbhost_musb_${config}_kernel_log
+        else
+            ./usbhost_test.exp $BOARD_TYPE musb $config >/dev/null  2>&1
+        fi
+
+        copy_image_config "usbhost_musb.$config"
+        mv $TESTSUITES_DIR/usbhost/*_log  $THIS_LOG
+
+        echo "End testing musb host device..."
+        sleep 10
+
+        if [ $RESET_BOARD -eq 1 ] ; then
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            sleep 10
+        fi
+
+    done
+fi
+
+
+######################################### USB OTG TEST #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+8))]} -eq 1 ] ; then
+
+    if [ ${AUTO_RUN_STATUS[$((n+7))]} -eq 1 ] ; then
+        OTG_mode=usbhost
+    elif [ ${AUTO_RUN_STATUS[$((n+5))]} -eq 1 ] ; then
+        OTG_mode=usbdev
+    fi
+
+    TARGET_MUSB_MODE="dma pio"
+    for config in $TARGET_MUSB_MODE
+    do
+
+        CONFIG=`echo $config|tr 'a-z' 'A-Z'`
+        echo "Start testing usbotg in $config mode with $OTG_mode..."
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        cd $TESTSUITES_DIR/usbotg
+        ./build_usbotg_kernel.exp $BOARD_TYPE $config >/dev/null 2>&1
+
+        if [ ! -f $IMAGE_DIR/uImage ] ; then
+            echo "$0:   Error, failed."
+            tail -50 ./build_usbotg_${config}_kernel_log
+        else
+            sleep 30
+            cd $TESTSUITES_DIR/$OTG_mode
+
+            if [ $OTG_mode = "usbhost" ] ; then
+                ./usbhost_test.exp $BOARD_TYPE otg $config >/dev/null 2>&1
+            elif [ $OTG_mode = "usbdev" ] ; then
+                ./gadget_zero_test.exp $BOARD_TYPE $config >/dev/null 2>&1
+                mv gadget_zero_test_log usbotg_dev_${config}_test_log
+            fi
+        fi
+
+        copy_image_config "usbotg"
+        mv $TESTSUITES_DIR/$OTG_mode/*test_log  $THIS_LOG
+        cp $TESTSUITES_DIR/usbotg/*_log  $THIS_LOG
+
+        echo "End testing usbotg in $config mode with $OTG_mode..."
+        sleep 10
+
+        if [ $RESET_BOARD -eq 1 ] ; then
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            sleep 10
+        fi
+
+    done
+fi
+
+
+##################################### XIP TEST #####################################
+
+if [ ${AUTO_RUN_STATUS[$((n+11))]} -eq 1 ] ; then
+    APP_FORMAT="fdpic shared-flat"
+    if [ $BOARD_TYPE == "BF609-EZKIT" ] ; then
+        SUB_TESTCASE="xip_userspace_bf6xx kernel_xip fs_xip"
+    else
+        SUB_TESTCASE="xip_userspace kernel_xip fs_xip"
+    fi
+
+    for sub_test in $SUB_TESTCASE
+    do
+
+        for format in $APP_FORMAT
+        do
+            FORMAT=`echo $format|tr 'a-z' 'A-Z'`
+            echo "Start testing $sub_test in $format mode..."
+
+            use_output_bak
+            cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+            cd $TESTSUITES_DIR/xip
+            ./build_${sub_test}_kernel.exp $BOARD_TYPE $format >/dev/null 2>&1
+
+            if ( [ $sub_test == "xip_userspace_bf6xx" ] && [ ! -f $IMAGE_DIR/vmImage ] ) || ( [ $sub_test == "xip_userspace" ] && [ ! -f $IMAGE_DIR/uImage ] ) || ( [ $sub_test == "kernel_xip" ] && [ ! -f $IMAGE_DIR/vmImage ] ) || ( [ $sub_test == "fs_xip" ] && ( [ ! -f $IMAGE_DIR/vmImage ] || [ ! -f $IMAGE_DIR/rootfs.romfs ] ) )
+            then
+                echo "$0:   Error, failed."
+                tail -50 ./build_${sub_test}_${format}_kernel_log
+            else
+                ./${sub_test}_test.exp $BOARD_TYPE $format >/dev/null  2>&1
+            fi
+
+            copy_image_config "$sub_test.$format"
+            if [ $sub_test == "xip_userspace_bf6xx" ] ; then
+                mv /tftpboot/img.romfs $THIS_LOG/img.romfs.$sub_test.$format
+                mv $IMAGE_DIR/vmImage $THIS_LOG/vmImage.$sub_test.$format
+                cp -a $OUTPUT_DIR/target $THIS_LOG/romfs.$sub_test.$format
+            elif [ $sub_test == "xip_userspace" ] ; then
+                mv /tftpboot/img.romfs $THIS_LOG/img.romfs.$sub_test.$format
+            elif [ $sub_test == "kernel_xip" ] ; then
+                mv $IMAGE_DIR/vmImage $THIS_LOG/vmImage.$sub_test.$format
+                cp -a $OUTPUT_DIR/target $THIS_LOG/romfs.$sub_test.$format
+            elif [ $sub_test == "fs_xip" ] ; then
+                mv $IMAGE_DIR/vmImage $THIS_LOG/vmImage.$sub_test.$format
+                mv $IMAGE_DIR/rootfs.romfs $THIS_LOG/rootfs.romfs.$sub_test.$format
+            fi
+
+            mv $TESTSUITES_DIR/xip/*_log  $THIS_LOG
+
+            echo "End testing $sub_test..."
+            sleep 10
+
+            if [ $RESET_BOARD -eq 1 ] ; then
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                sleep 10
+            fi
+        done
+
+    done
+
+fi
+
+
+##################################### OPROFILE TEST #####################################
+
+if [ ${AUTO_RUN_STATUS[$((n+12))]} -eq 1 ] ; then
+    APP_FORMAT="fdpic flat"
+
+    for format in $APP_FORMAT
+    do
+        echo "Start testing oprofile in $format mode..."
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        cd $TESTSUITES_DIR/oprofile
+        ./build_oprofile_kernel.exp $BOARD_TYPE $format >/dev/null 2>&1
+
+        if [ ! -f $IMAGE_DIR/uImage ] ; then
+            echo "$0:   Error, failed."
+            tail -50 ./build_oprofile_${format}_kernel_log
+        else
+            ./oprofile_test.exp $BOARD_TYPE $format >/dev/null  2>&1
+        fi
+
+        copy_image_config "oprofile.$format"
+        mv $TESTSUITES_DIR/oprofile/*_log  $THIS_LOG
+
+        echo "End testing oprofile..."
+        sleep 10
+
+        if [ $RESET_BOARD -eq 1 ] ; then
+            cd $TESTSUITES_DIR/common
+            ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+            sleep 10
+        fi
+    done
+
+fi
+
+################# TEST KERNEL BOOT AND MOUNT JFFS2 FS FROM SPI FLASH ########################
+
+if [ ${AUTO_RUN_STATUS[$((n+6))]} -eq 1  ] ; then
+    echo  "Testing kernel boot and mount jffs2 file system from SPI flash ..."
+    # Please set the chip selection to the 3rd one on bf533 and the 2rd on bf537 board.
+
+    rm -fr /tftpboot/uImage.snormtd* /tftpboot/vmImage
+
+    use_output_bak
+    cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+    cd $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+6))]}
+    ./build_${AUTO_TESTCASE[$((n+6))]}_kernel.exp $BOARD_TYPE >/dev/null 2>&1
+
+    if [ ! -f $IMAGE_DIR/uImage ] || [ ! -f $IMAGE_DIR/vmImage ] ; then
+        echo "$0:   Error, failed."
+        tail -50 ./build_snormtd*kernel_log
+    else
+        ./${AUTO_TESTCASE[$((n+6))]}_test.exp $BOARD_TYPE >/dev/null 2>&1
+        sleep 30
+        ./spi_flash_images.exp $BOARD_TYPE >/dev/null 2>&1
+        if [ $? == 0 ] ; then
+            sleep 30
+            ./snormtd_reboot_test.exp $BOARD_TYPE >/dev/null 2>&1
+        fi
+    fi
+
+    copy_image_config "snormtd"
+    mv $IMAGE_DIR/vmImage $THIS_LOG/vmImage.snormtd
+    mv $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+6))]}/*_log  $THIS_LOG
+
+    echo  "End testing snormtd..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+fi
+
+#############################################################################################
+#################### TEST SPI FLASH WITH DIFFERENT CONFIGS ##################################
+
+  snormtd_df_config=""
+  snormtd_dma_config=""
+  snormtd_ext_config=""
+
+  if [ ${AUTO_RUN_STATUS[$((n+20))]} -eq 1 ] ; then
+  snormtd_df_config="pio df"
+  fi
+ 
+  if [ ${AUTO_RUN_STATUS[$((n+16))]} -eq 1 ] ; then
+  snormtd_dma_config="dma normal"
+  fi
+ 
+  if [ ${AUTO_RUN_STATUS[$((n+10))]} -eq 1 ] ; then
+  snormtd_ext_config="pio ext"
+  fi
+
+  for config in "$snormtd_df_config" "$snormtd_dma_config" "$snormtd_ext_config"
+  do
+
+  if [ -z $config ] ; then
+  continue
+  fi
+
+  echo  "Testing from spi flash $config ..."
+ # Please set the chip selection to the 3rd one on bf609 board.
+
+  rm -fr /tftpboot/uImage.snormtd*
+
+  # run ${AUTO_RUN_STATUS[$((n+10)) and ${AUTO_TESTCASE[$((n+6))]} with the same folder
+  cd $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+6))]}
+
+  ./build_${AUTO_TESTCASE[$((n+6))]}_kernel.exp $BOARD_TYPE $config  >/dev/null  2>&1
+  sleep 30
+  ./${AUTO_TESTCASE[$((n+6))]}_test.exp $BOARD_TYPE $config >/dev/null  2>&1
+  sleep 30
+
+  copy_image_config $config
+  mv $TESTSUITES_DIR/${AUTO_TESTCASE[$((n+6))]}/*_log  $THIS_LOG
+
+  echo  "End testing $config..."
+  sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+  done
+
+
+######################################### TEST LTP #########################################
+
+if [ ${AUTO_RUN_STATUS[$((n+2))]} -eq 1 ] ; then
+    echo "Testing LTP..."
+
+    if [ $ARCH_TYPE == "arm" ] ; then
+        ltp_args=( [0]="1 0 0" [1]="2 0 0" [2]="3 0 0" )
+        ltp_suf=(slab slub slob)
+    elif [ $ARCH_TYPE == "blackfin" ] ; then
+        if [ $BOARD_CONFIG == "BF561-EZKIT-SMP" ] || [ $BOARD_TYPE == "BF548-EZKIT" ] ; then
+            # BF561-EZKIT-SMP(silicon 0.5) and BF548-EZKIT can't support write_back
+            ltp_args=( [0]="1 2 0" [1]="2 2 0" [2]="3 2 0" [3]="0 2 1" )
+            ltp_suf=(slab_wt slub_wt slob_wt high_res_timer_preempt)
+        else
+            ltp_args=( [0]="1 1 0" [1]="2 1 0" [2]="3 1 0" [3]="1 2 0" [4]="0 0 1" )
+            ltp_suf=(slab_wb slub_wb slob_wb slab_wt high_res_timer_preempt)
+        fi
+    fi
+
+    for i in 0 1 2 3 4
+    do
+        if [ -z ${ltp_suf[i]} ] ; then
+            continue
+        fi
+
+        use_output_bak
+	cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        echo "Test ltp with option ${ltp_suf[i]}"
+	cd $TESTSUITES_DIR/ltp
+        echo "./build_ltp_kernel.exp $BOARD_TYPE ${ltp_args[i]}"
+        ./build_ltp_kernel.exp $BOARD_TYPE ${ltp_args[i]}> /dev/null 2>&1
+
+        copy_image_config "ltp_${ltp_suf[i]}"
+
+        if [ ! -f $IMAGE_DIR/uImage ]
+        then
+            echo "Build kernel failed for ltp ${ltp_suf[i]} test"
+            mv $TESTSUITES_DIR/ltp/build_ltp_kernel_log $THIS_LOG/build_ltp_kernel_log_${ltp_suf[i]}
+        else
+            # do if build kernel succeed
+            echo "build_ltp_kernel.exp done"
+
+            if [ $RESET_BOARD -eq 1 ] ; then
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                sleep 10
+            fi
+
+	    start_time=`date +%s`
+            cd $TESTSUITES_DIR/ltp
+            ./ltp_auto_test.exp $BOARD_TYPE /dev/ttyS0 2 > /dev/null 2>&1
+            echo "ltp_auto_test.exp done"
+            ./ltp_compare_results_all.sh config/summary.base.$ARCH_TYPE $TESTSUITES_DIR/ltp/test/logs/summary.new >> ltp_test_log
+            if [ $? == 1 ] ; then
+                echo "ltp test fail"
+                echo "LTP Test ............[FAIL]" >> ltp_test_log
+            else
+                echo "ltp test pass"
+                echo "LTP Test ............[PASS]" >> ltp_test_log
+            fi
+	    end_time=`date +%s`
+	    test_period=`expr $end_time - $start_time`
+	    echo "Test Period is: $test_period seconds." >> ltp_test_log
+
+            mv $TESTSUITES_DIR/ltp/build_ltp_kernel_log $THIS_LOG/build_ltp_kernel_log_${ltp_suf[i]}
+            mv $TESTSUITES_DIR/ltp/test/logs/summary.new $THIS_LOG/ltp-summary_test_log_${ltp_suf[i]}
+            mv $TESTSUITES_DIR/ltp/test/logs/ltp_auto_test*summary-log $THIS_LOG/
+            mv $TESTSUITES_DIR/ltp/test/logs/detailed.new $THIS_LOG/ltp-detailed_test_log_${ltp_suf[i]}
+            mv $TESTSUITES_DIR/ltp/test/logs/ltp_auto_test*detailed-log $THIS_LOG/
+            mv $TESTSUITES_DIR/ltp/build_ltp_log $THIS_LOG/build_ltp_log_${ltp_suf[i]}
+            mv $TESTSUITES_DIR/ltp/ltp_test_log $THIS_LOG/ltp_test_log_${ltp_suf[i]}
+
+            sleep 30
+
+            if [ $RESET_BOARD -eq 1 ] ; then
+                cd $TESTSUITES_DIR/common
+                ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+                sleep 10
+            fi
+            # end, do if build kernel succeed
+        fi
+
+    done
+
+fi
+
+
+################################# MANUAL TESTING #################################
+for i in `seq 0 $n`
+do
+
+    if [ -z ${MANUAL_TESTCASE[$i]} ] ; then
+        continue
+    fi
+
+    if [ ${MANUAL_RUN_STATUS[$i]} -eq 1  ] ; then
+
+        use_output_bak
+        cp $SRC_ROOT/config.user.policy $SRC_ROOT/.config
+
+        echo  "Start testing ${MANUAL_TESTCASE[$i]}..."
+
+        if [ `echo ${MANUAL_TESTCASE[$i]}|grep linphone` ] ; then
+            TESTCASE_DIR=linphone
+        elif [ `echo ${MANUAL_TESTCASE[$i]}|grep audio_` ] ; then
+            TESTCASE_DIR=audio
+        elif [ `echo ${MANUAL_TESTCASE[$i]}|grep i2ctwi_` ] ; then
+            TESTCASE_DIR=i2ctwi
+        elif [ ${MANUAL_TESTCASE[$i]} == "awg" ] || [ ${MANUAL_TESTCASE[$i]} == "ndso" ] ; then
+            TESTCASE_DIR=spiadc
+        elif [ ${MANUAL_TESTCASE[$i]} == "icc_resource" ] ; then
+            TESTCASE_DIR=icc
+        elif [ ${MANUAL_TESTCASE[$i]} == "sport_uart" ] ; then
+            TESTCASE_DIR=serial
+        else
+            TESTCASE_DIR=${MANUAL_TESTCASE[$i]}
+        fi
+        cd $TESTSUITES_DIR/$TESTCASE_DIR
+
+        if [ `echo ${MANUAL_TESTCASE[$i]}|grep audio_` ] ; then
+            ./build_audio_kernel.exp $BOARD_TYPE ${MANUAL_TESTCASE[$i]} >/dev/null 2>&1
+        elif [ ${MANUAL_TESTCASE[$i]} == "sport_uart" ] ; then
+            ./build_uart_kernel.exp $BOARD_TYPE sport_uart > /dev/null 2>&1
+        else
+            ./build_${MANUAL_TESTCASE[$i]}_kernel.exp $BOARD_TYPE > /dev/null 2>&1
+        fi
+
+        if [ ! -f $IMAGE_DIR/uImage ]
+        then
+            echo "$0:   Error, failed."
+            tail -50 ./build_${MANUAL_TESTCASE[$i]}*_kernel_log
+        fi
+
+        copy_image_config "${MANUAL_TESTCASE[$i]}"
+        mv $TESTSUITES_DIR/$TESTCASE_DIR/*_log  $THIS_LOG
+
+    fi
+
+    echo  "End testing ${MANUAL_TESTCASE[$i]}..."
+    sleep 10
+
+    if [ $RESET_BOARD -eq 1 ] ; then
+        cd $TESTSUITES_DIR/common
+        ./reset_board.exp $BOARD_TYPE > /dev/null 2>&1
+        sleep 10
+    fi
+
+done
+
+
+# Clean kernel source after one regression cycle is finished
+# to avoid git problem in next cycle. Kernel patch will be deleted.
+make_clean
+
+# Clean all modifications to source code after all these tests.
+cd $SRC_ROOT
+git checkout .
+cd $SRC_ROOT/linux/linux-kernel
+git checkout .
+cd $TESTSUITES_DIR
+git checkout .
+
+echo "Testing Done."
+exit 0

@@ -1,0 +1,108 @@
+#!/bin/bash
+
+########## Set up variables bellow ##########
+
+source ../configs/board_config_${BOARD_CONFIG}
+
+# BUILD_ID is an environment variable in time format from hudson;
+# If it is set and non null string, set TIMESTAMP of BUILD_ID;
+# otherwise set TIMESTAMP of current time.
+TIMESTAMP=${BUILD_ID:-`date +%Y_%b_%d_%H_%M`}
+
+# All projects are located in WORKSPACE_ROOT.
+WORKSPACE_ROOT=/home/test/workspace
+
+# SRC_ROOT is location where source code is checked out.
+if [ $NODE_NAME ] ; then
+    SRC_ROOT=$WORKSPACE_ROOT/src/kernel/label/$NODE_NAME
+else
+    SRC_ROOT=$WORKSPACE_ROOT/src/kernel/label/$BOARD_CONFIG
+fi
+
+TESTSUITES_DIR=$SRC_ROOT/testsuites
+COMMON_TESTSCRIPTS=$TESTSUITES_DIR/common
+KERNEL_DIR=$SRC_ROOT/linux/linux-kernel
+OUTPUT_DIR=$SRC_ROOT/output
+LOG_DIR=$WORKSPACE_ROOT/logs
+THIS_LOG=$LOG_DIR/$TIMESTAMP
+HOST_IP=`/sbin/ifconfig|grep "10.99"|awk '{print $2}'|awk -F: '{print $2}'`
+LASTRUN=lastrun
+THISRUN=thisrun
+test_results=0
+
+
+# Create log directory
+
+mkdir -p $THIS_LOG
+
+cd $LOG_DIR
+rm -rf $THISRUN
+ln -s $THIS_LOG $THISRUN
+
+# Start time control script
+
+#$TESTSUITES_DIR/test_runtime_control & 
+
+# Start test
+cd $COMMON_TESTSCRIPTS
+./test_runtime_control &
+
+cd $COMMON_TESTSCRIPTS
+echo "./kernel_test.matrix $BOARD_CONFIG $BOARD_TYPE $BINARY_FORMAT $WORKSPACE_ROOT $THIS_LOG $XENOMAI"
+./kernel_test.matrix $BOARD_CONFIG $BOARD_TYPE $ARCH_TYPE $BINARY_FORMAT $WORKSPACE_ROOT $THIS_LOG $XENOMAI \
+>> kernel_test_log 2>&1
+test_status=$?
+
+
+# Create log summary
+
+mkdir -p $LOG_DIR/$THISRUN/test_summary
+if [ $test_status -eq 1 ] ; then 
+    echo -e "Give the wrong arguments in $TIMESTAMP.\nexit=$test_status." > $LOG_DIR/$THISRUN/test_summary/test_results
+elif [ $test_status -eq 2 ] ; then
+    echo -e "No source files in $TIMESTAMP.\nexit=$test_status." > $LOG_DIR/$THISRUN/test_summary/test_results
+elif [ $test_status -eq 3 ] ; then 
+    echo -e "Building failed in $TIMESTAMP.\nexit=$test_status." > $LOG_DIR/$THISRUN/test_summary/test_results
+else
+    echo -e "Testing are done in $TIMESTAMP.\nexit=$test_status." > $LOG_DIR/$THISRUN/test_summary/test_results
+fi
+
+cp $COMMON_TESTSCRIPTS/kernel_test_log $THIS_LOG
+
+$COMMON_TESTSCRIPTS/get_test_summary $THIS_LOG $BOARD_TYPE $BOARD_CONFIG
+
+echo -e "Here is the difference between lastrun and thisrun test results: \n"
+
+$COMMON_TESTSCRIPTS/compare_kernel_results $LOG_DIR/$LASTRUN/test_summary  $LOG_DIR/$THISRUN/test_summary  > $LOG_DIR/$THISRUN/test_summary/compare_results 
+compare_result_status=$?
+if [ $compare_result_status -eq 0 ] ; then
+    if [ $test_status -eq 0 ] ; then    
+        echo -e "Testing success in $TIMESTAMP.\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+    else
+        echo -e "Testing in $TIMESTAMP failed as last time.\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+    fi
+elif [ $compare_result_status -eq 1 ] ; then
+    if [ $test_status -eq 0 ] ; then    
+        echo -e "Testing failed in $TIMESTAMP\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+    elif [ $test_status -eq 1 ] || [ $test_status -eq 2 ] ; then    
+        echo -e "Test $BOARD_CONFIG on $HOST_IP  fails!\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+    elif [ $test_status -eq 3 ] ; then    
+        echo -e "Test $BOARD_CONFIG on $HOST_IP  fails!\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+        grep -nr  "Error"  $THIS_LOG/build_policy_kernel_log -A 20 -B 30 | dos2unix  > /tmp/build_policy_kernel_log
+    else
+        echo -e "Test $BOARD_CONFIG on $HOST_IP  fails oddly!\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+    fi  
+else
+    echo -e "Compare test results fails in $TIMESTAMP\ncompare_result_exit=$compare_result_status." >> $LOG_DIR/$THISRUN/test_summary/test_results
+fi
+
+# Clean logs and images
+
+cd $SRC_ROOT
+find testsuites -name "*log" -type f | xargs rm
+
+cd $LOG_DIR
+rm -rf $LASTRUN
+ln -s $THIS_LOG $LASTRUN
+
+exit

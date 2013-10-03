@@ -1,0 +1,216 @@
+#!/usr/bin/expect
+#
+# Build Kernel for power test with sdio mmc
+#
+# Usage:
+#   ./build_power_sdiommc_kernel.exp board_type
+#
+# Example:
+#   ./build_power_sdiommc_kernel.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+# Disable unrelated drivers so it won't interfere with wake up message
+        -re "Serial ATA and Parallel ATA drivers.*ATA.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Suspend to RAM and standby.*SUSPEND.*\\\[.*]" {
+            send "Y\r"
+        }
+
+# MMC configuration
+        -re "MMC/SD/SDIO card support \\\(MMC\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MMC block device driver.*MMC_BLOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Blackfin Secure Digital Host support.*SDH_BFIN.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#        -re "Pull Up Resistor Workaround.*SDH_BFIN_MISSING_CMD_PULLUP_WORKAROUND.*\\\[.*]" {
+#            send "Y\r"
+#        }
+#
+#        -re "Blackfin on-chip NAND Flash Controller driver.*MTD_NAND_BF5XX.*\\\[.*]" {
+#            send "N\r"
+#        }
+#
+        -re "Second extended fs support.*EXT2_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MSDOS fs support.*MSDOS_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VFAT \\\(Windows-95\\\) fs support.*VFAT_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Default codepage for FAT.*FAT_DEFAULT_CODEPAGE.*\\\[.*]" {
+            send "850\r"
+        }
+
+        -re "Codepage 437.*United States, Canada.*NLS_CODEPAGE_437.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Codepage 850.*Europe.*NLS_CODEPAGE_850.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "NLS ISO 8859-1.*Latin 1; Western European Languages.*NLS_ISO8859_1.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "rtcwake \\\(RTCWAKE\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "dosfstools.*BR2_PACKAGE_DOSFSTOOLS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkdosfs.*BR2_PACKAGE_DOSFSTOOLS_MKDOSFS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mtd/jffs2 utilities.*BR2_PACKAGE_MTD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs.jffs2.*BR2_PACKAGE_MTD_MKFSJFFS2.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_erase.*BR2_PACKAGE_MTD_FLASH_ERASE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_eraseall.*BR2_PACKAGE_MTD_FLASH_ERASEALL.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "bonnie\\\+\\\+.*BR2_PACKAGE_BONNIE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

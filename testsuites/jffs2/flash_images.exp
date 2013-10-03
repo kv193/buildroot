@@ -1,0 +1,292 @@
+#!/usr/bin/expect
+
+source  ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+
+send_user "Starting $argv0\n"
+
+set TITLE [title "$argv0"]
+
+append TITLE " TEST" 
+
+step "Spawn kermit"
+source ../common/spawn_kermit.exp
+
+step "Reset the uboot."
+source ../common/reset_to_uboot.exp
+
+set bootargs  $bootargs_param4
+set send_slow {1 .2}
+
+send -s "set bootargs $bootargs\r"
+expect   ">" 
+send -s "save\r"
+expect   ">" 
+
+step "Flash images."
+
+set case_num 0
+
+incr case_num
+send -s "\r"
+expect   ">" 
+
+set timeout 120   
+send -s "tftp 0x1000000 $compressed_kernel_only_image\r"
+while 1 {
+expect {
+		
+	"done" {
+	set tftp_flag SUCCESS
+	}
+
+	-re "Bytes transferred = \[0-9]+ \\\((\[0-9a-fA-F]+) hex\\\)" {
+
+	set image_size $expect_out(1,string)
+	send_user "Image size is $image_size\n"
+	break
+	}
+	
+	timeout {
+	send_user "ERROR: Uboot locked up during tftp\n"		
+	break
+	}
+}
+}
+    
+  
+if { [ expr 0x$image_size ] < $kernel_size } {
+
+set timeout 80
+send -s "protect off $kernel_start_addr $kernel_end_addr\r"
+while 1 {
+		expect {
+
+		"Un-Protected" {
+				
+				send_user "  unprotect success\n"
+			}
+	
+		">" {
+				break
+			}
+	
+		timeout {
+				send_user "ERROR:  unprotect failed\n"
+				
+				break
+			}
+		}
+	}
+	
+	
+set timeout 240	    
+	
+	send -s "erase $kernel_start_addr $kernel_end_addr\r"
+	while 1 {
+	expect {
+	
+		"Erased" {
+			send_user " erase success\n"
+			break
+		}
+				
+		timeout {
+		send_user "ERROR:  erase failed\n"
+		
+		break
+		}
+	}
+	}
+	
+	set timeout 500
+	
+	send -s "cp.b 0x1000000 $kernel_start_addr  0x$image_size\r"
+	while 1 {
+	expect {
+	
+		"done" {
+			send_user " cp success\n"
+                        case_pass $case_num
+			break
+		}
+		
+				
+		timeout {
+		send_user "ERROR:  cp failed\n"
+		case_fail $case_num
+		break
+		}
+	}
+	}
+} else {
+    send_user "Kernel image size is bigger than flash partition size $kernel_size $image_size\n  "
+    case_fail $case_num
+}	
+############################################################################################################	
+	
+#expect ">"
+#send -s "tftp 0x1000000 $jffs2_rootfs_image\r"
+#while 1 {
+#expect {
+#	
+#	"done" {
+#		set tftp_flag SUCCESS
+#	
+#	}
+#	
+#	-re "Bytes transferred = \[0-9]+ \\\((\[0-9a-fA-F]+) hex\\\)" {
+#	
+#		set image_size $expect_out(1,string)
+#		send_user "Image size is $image_size\n"
+#		break
+#	}
+#	
+#	timeout {
+#		send_user "ERROR: Uboot locked up during tftp\n"
+#		
+#		break
+#	}
+#}
+#}
+#
+#if { [ expr 0x$image_size ] < $rootfs_size } {
+#
+#set timeout 80
+#send -s "protect off $rootfs_start_addr $rootfs_end_addr\r"
+#while 1 {
+#		expect {
+#
+#		"Un-Protected" {
+#				
+#				send_user "  unprotect success\n"
+#			}
+#	
+#		">" {
+#				break
+#			}
+#	
+#		timeout {
+#				send_user "ERROR:  unprotect failed\n"
+#				
+#				break
+#			}
+#		}
+#	}
+#	
+#
+#set timeout 240	
+#		
+#send -s "erase $rootfs_start_addr $rootfs_end_addr\r"
+#	while 1 {
+#	expect {
+#	
+#		"Erased" {
+#			send_user " erase success\n"
+#			break
+#		}
+#				
+#		timeout {
+#		send_user "ERROR:  erase failed\n"
+#		
+#		break
+#		}
+#	}
+#	}
+#	
+#set timeout 500
+#
+#send -s "cp.b 0x1000000 $rootfs_start_addr 0x$image_size\r"
+#while 1 {
+#expect {
+#
+#	"done" {
+#		send_user " cp success\n"
+#                case_pass $case_num 
+#		break
+#	}
+#	
+#
+#	
+#	timeout {
+#	send_user "ERROR:  cp failed\n"
+#	case_fail $case_num
+#	break
+#	}
+#}
+#}
+#
+#} else {
+#    send_user "Rootfs image size is bigger than flash partition size $rootfs_size $image_size\n  "
+#    case_fail $case_num
+#}
+#
+set timeout 500
+
+send -s "tftp 0x1000000 vmImage\r"
+while 1 {
+expect {
+	
+	"done" {
+	set tftp_flag SUCCESS
+	break
+	}
+	
+	timeout {
+	send_user "ERROR: Uboot locked up during tftp\n"	
+	break
+	}
+}
+}
+    
+set case_num 0
+
+incr case_num
+ 
+       set timeout 80
+       send -s "bootm 0x1000000\r"
+     
+	while 1 {
+  	expect {
+             -re $kernel_prompt {
+	    send_user "\nEnding flash_image.exp \n"  
+                case_pass $case_num
+	    break
+	    }	      
+	     
+             timeout {
+	     send_user "failed tftp_boot attempt\n"
+                case_fail $case_num
+	     exit
+	     }
+	   }   
+    } 
+send -s "\r"
+expect ">"
+send -s "reboot\r"
+	while 1 {
+	expect {
+
+	"Hit any key " {
+	send "\3"
+	
+	}
+
+	"bfin>" {
+	send_user "successful reset attempt\n"
+	
+	break
+	}
+
+	timeout {
+	send_user "failed reset attempt\n"
+	case_fail $case_num
+	exit
+	}
+}
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

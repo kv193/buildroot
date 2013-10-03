@@ -1,0 +1,12 @@
+#!/usr/bin/expect
+
+# This file couldn't be indepently executed.
+# It is meant to be included into ***_test.exp scripts.
+
+if { $arch == "arm" } {
+    send_user "Update kernel image\n\n"
+    source ../common/update_image.exp
+} elseif { $arch == "blackfin" } {
+    send_user "Reboot kernel\n\n"
+    source ../common/reboot_kernel.exp
+}

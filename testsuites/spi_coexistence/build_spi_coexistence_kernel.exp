@@ -1,0 +1,275 @@
+#!/usr/bin/expect
+#
+# Build script for spi coexistence test.
+#
+# Usage:
+#   ./build_spi_coexistence_kernel.exp board_type
+#
+# Example:
+#   ./build_spi_coexistence_kernel.exp BF537-STAMP
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+if { $board_type == "BF537-STAMP" } {
+    set board_file $src_root/linux/linux-kernel/arch/blackfin/mach-bf537/boards/stamp.c
+}
+
+if [ catch {exec sed -i "/modalias.*mmc_spi/,/chip_select/ s/4/1/" $board_file} ] {
+    send_user "\nfail to modify board file\n"
+    send_user "$errorInfo\n"
+    exit
+}
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+cd $src_root/testsuites/common
+step "Release memory from user space"
+source config_cut_app.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "SPI bus lock.*SPI_BFIN_LOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#spi mmc
+        -re "MSDOS fs support.*MSDOS_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Second extended fs support.*EXT2_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VFAT \\\(Windows-95\\\) fs support.*VFAT_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Default codepage for FAT.*FAT_DEFAULT_CODEPAGE.*\\\[.*]" {
+            send "850\r"
+        }
+
+        -re "Codepage 437.*United States, Canada.*NLS_CODEPAGE_437.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Codepage 850.*Europe.*NLS_CODEPAGE_850.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "NLS ISO 8859-1.*Latin 1; Western European Languages.*NLS_ISO8859_1.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MMC/SD/SDIO card support \\\(MMC\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MMC/SD/SDIO over SPI.*MMC_SPI.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#sound card
+        -re "I2C support \\\(I2C\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Sound card support.*SOUND.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Advanced Linux Sound Architecture.*SND.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "OSS Mixer API.*SND_MIXER_OSS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "OSS PCM.*digital audio.*API.*SND_PCM_OSS\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Cascaded AD73322 Audio support for BF53x.*SND_BFIN_AD73322.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ALSA for SoC audio support.*SND_SOC.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "SoC I2S Audio for the ADI Blackfin chip.*SND_BF5XX_I2S.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "SoC I2S\\\(TDM mode\\\) Audio for the ADI BF5xx chip.*SND_BF5XX_TDM.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "SoC AD1836 STAMP Daughter card support.*SND_BF5XX_SOC_AD1836.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Set a SPORT for Sound chip.*SND_BF5XX_SPORT_NUM.*\\\[.*]" {
+            send "0\r"
+        }
+
+        -re "SoC AC97 Audio for the ADI BF5xx chip.*SND_BF5XX_AC97.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "fdisk \\\(FDISK\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs_ext2 \\\(MKFS_EXT2\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs_vfat \\\(MKFS_VFAT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Target ABI.*FDPIC.*FLAT.*FLAT_SEP_DATA.*SHARED_FLAT.*\\\[.*]" {
+            send "1\r"
+        }
+
+        -re "alsa-utils \\\(BR2_PACKAGE_ALSA_UTILS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "amixer \\\(BR2_PACKAGE_ALSA_UTILS_AMIXER\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "aplay/arecord \\\(BR2_PACKAGE_ALSA_UTILS_APLAY\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "speaker-test \\\(BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "play \\\(BR2_PACKAGE_PLAY\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "bonnie\\\+\\\+.*BR2_PACKAGE_BONNIE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

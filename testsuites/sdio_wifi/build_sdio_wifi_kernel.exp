@@ -1,0 +1,226 @@
+#!/usr/bin/expect
+#
+# Build script for sdio wifi driver test.
+#
+# Usage:
+#   ./build_sdio_wifi_kernel.exp board_type
+#
+# Example:
+#   ./build_sdio_wifi_kernel.exp BF548-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+#disable DSA and virtual terminal for 548 & 518
+        -re "Distributed Switch Architecture support.*NET_DSA.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Virtual terminal.*VT.*\\\[.*]" {
+            send "N\r"
+        }
+
+#wireless network stack
+        -re "Wireless \\\(WIRELESS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "cfg80211 - wireless configuration API.*CFG80211.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Wireless extensions sysfs files.*WIRELESS_EXT_SYSFS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Generic IEEE 802.11 Networking Stack \\\(mac80211\\\).*MAC80211.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#Blackfin SD host driver
+        -re "MMC/SD/SDIO card support \\\(MMC\\\).*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Blackfin Secure Digital Host support.*SDH_BFIN.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Pull Up Resistor Workaround.*SDH_BFIN_MISSING_CMD_PULLUP_WORKAROUND.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#libertas driver
+        -re "Wireless LAN \\\(WLAN\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Marvell 8xxx Libertas WLAN driver support \\\(LIBERTAS\\\) \\\[.*]" {
+            send "M\r"
+        }
+
+        -re "Marvell Libertas 8385.*SDIO 802.11.*LIBERTAS_SDIO.*\\\[.*]" {
+            send "M\r"
+        }
+
+        -re "Support transferring block with size of power-of-2 only.*POWEROF2_BLOCKSIZE_ONLY.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Enable full debugging output in the Libertas module.*LIBERTAS_DEBUG.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#Disable Nand flash controller support, as it uses the same DMA channel as SDH
+        -re "Blackfin on-chip NAND Flash Controller driver.*MTD_NAND_BF5XX.*\\\[.*]" {
+            send "N\r"
+        }
+
+#Enable userspace firmware loading support
+        -re "Userspace firmware loading support.*FW_LOADER.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "udhcp client.*\\\(UDHCPC\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mdev \\\(MDEV\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Support loading of firmwares.*FEATURE_MDEV_LOAD_FIRMWARE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "wireless tools.*BR2_PACKAGE_WIRELESS_TOOLS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "Copy wifi firmware to target"
+if [catch "exec mkdir -p $src_root/output/target/lib/firmware" msg] {
+    send_user "\nFAIL: mkdir -p $src_root/output/target/lib/firmware\n"
+    send_user "$errorInfo\n"
+}
+if [catch "exec cp $src_root/dl/sd8686.bin $src_root/output/target/lib/firmware" msg] {
+    send_user "\nFAIL: cp $src_root/dl/sd8686.bin $src_root/output/target/lib/firmware\n"
+    send_user "$errorInfo\n"
+}
+if [catch "exec cp $src_root/dl/sd8686_helper.bin $src_root/output/target/lib/firmware" msg] {
+    send_user "\nFAIL: cp $src_root/dl/sd8686_helper.bin $src_root/output/target/lib/firmware\n"
+    send_user "$errorInfo\n"
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

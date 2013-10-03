@@ -1,0 +1,212 @@
+#!/usr/bin/expect
+#
+# This file can't be indepently executed.
+# It needs to be included into build***kernel.exp scripts.
+#
+# Usage:
+# source_args config_usb.exp usb_driver musb_mode
+#
+# Examples:
+# * config sl811 driver as built-in mode:
+#   source_args config_usb.exp usbhost_sl811
+# * config musb driver as pio mode:
+#   source_args config_usb.exp musb pio
+#
+
+if { $argc < 1 } {
+    send_user "\nconfig_usb.exp\nPlease input: usb_driver(usbhost_isp1362, usbhost_sl811, usbhost_isp1760 or musb)\n"
+    send_user "If musb is used, please also input: musb_mode(dma or pio)\n"
+    exit
+}
+
+set usb_driver [lindex $argv 0]
+
+if { $usb_driver == "musb" } {
+    if { $argc > 1 } {
+        set musb_mode [lindex $argv 1]
+    } else {
+        set musb_mode "dma"
+    }
+}
+
+cd $src_root
+set timeout 300
+spawn make linux-config
+
+if { $usb_driver == "usbhost_isp1362" || $usb_driver == "usbhost_sl811" || $usb_driver == "usbhost_isp1760" } {
+    while 1 {
+        expect {
+            -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+                continue
+            }
+
+            -re "Flash device in physical memory map.*MTD_PHYSMAP.*\\\[.*]" {
+                #CONFIG_MTD_PHYSMAP claims the entire Async. Memory Space
+                #need to entirely disable it while using various U-Connector boards
+                send "N\r"
+            }
+
+            -re "Bank 3.*BANK_3.*\\\[.*]" {
+                if { $usb_driver == "usbhost_isp1362" || $usb_driver == "usbhost_sl811" } {
+                    send "0xAAC2\r"
+                } elseif { $usb_driver == "usbhost_isp1760" } {
+                    send "0x66C4\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "USB support.*USB_SUPPORT.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "Support for Host-side USB.*USB.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "ISP 1760 HCD support.*USB_ISP1760_HCD.*\\\[.*]" {
+                if { $usb_driver == "usbhost_isp1362" } {
+                    send "N\r"
+                } elseif { $usb_driver == "usbhost_sl811" } {
+                    send "N\r"
+                } elseif { $usb_driver == "usbhost_isp1760" } {
+                    send "Y\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "ISP1362 HCD support.*USB_ISP1362_HCD.*\\\[.*]" {
+                if { $usb_driver == "usbhost_isp1362" } {
+                    send "Y\r"
+                } elseif { $usb_driver == "usbhost_sl811" } {
+                    send "N\r"
+                } elseif { $usb_driver == "usbhost_isp1760" } {
+                    send "N\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "SL811HS HCD support.*USB_SL811_HCD.*\\\[.*]" {
+                if { $usb_driver == "usbhost_isp1362" } {
+                    send "N\r"
+                } elseif { $usb_driver == "usbhost_sl811" } {
+                    send "Y\r"
+                } elseif { $usb_driver == "usbhost_isp1760" } {
+                    send "N\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "Dummy Delay ASYNC Memory Bank.*(\[0-9]+). Bank0.*DUMMY_DELAY_BANK0.*\[cC]hoice\\\[.*]" {
+                if { $usb_driver == "usbhost_sl811" } {
+                    send "$expect_out(1,string)\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "($anomalous_option) \\\[\[^\]]+/.]" {
+                send "\r"
+            }
+
+            "\\\(*) \\\[*]" {
+                sleep .01
+                send "\r"
+            }
+
+            -re "\[cC]hoice\\\[.*]:" {
+                send "\r"
+            }
+
+            eof {
+                send_user "\nEnd of configuration\n"
+                break
+            }
+
+            timeout {
+                send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+                exit
+            }
+        }
+    }
+} elseif { $usb_driver == "musb" } {
+    while 1 {
+        expect {
+            -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+                continue
+            }
+
+            -re "USB support.*USB_SUPPORT.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "Support for Host-side USB.*USB.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "Inventra Highspeed Dual Role Controller.*USB_MUSB_HDRC.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "Platform Glue Layer \\\[.*]" {
+                send "Y\r"
+            }
+
+            -re " (\[0-9]+). Blackfin.*USB_MUSB_BLACKFIN.*\[cC]hoice.*\\\[.*]" {
+                send "$expect_out(1,string)\r"
+            }
+
+            -re " (\[0-9]+). Inventra.*USB_INVENTRA_DMA.* (\[0-9]+). Disable DMA.*MUSB_PIO_ONLY.*\[cC]hoice.*\\\[.*]" {
+                if { $musb_mode == "dma" } {
+                    send "$expect_out(1,string)\r"
+                } elseif { $musb_mode == "pio" } {
+                    send "$expect_out(2,string)\r"
+                } else {
+                    send "\r"
+                }
+            }
+
+            -re "USB Gadget Support.*USB_GADGET.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "Inventra HDRC USB Peripheral.*USB_GADGET_MUSB_HDRC.*\\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "USB Gadget Drivers \\\[.*]" {
+                send "Y\r"
+            }
+
+            -re "USB Gadget Drivers.* (\[0-9]+). Gadget Zero.*USB_ZERO.*\[cC]hoice\\\[.*]" {
+                send "$expect_out(1,string)\r"
+            }
+
+            -re "($anomalous_option) \\\[\[^\]]+/.]" {
+                send "\r"
+            }
+
+            "\\\(*) \\\[*]" {
+                sleep .01
+                send "\r"
+            }
+
+            -re "\[cC]hoice\\\[.*]:" {
+                send "\r"
+            }
+
+            eof {
+                send_user "\nEnd of configuration\n"
+                break
+            }
+
+            timeout {
+                send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+                exit
+            }
+        }
+    }
+}

@@ -1,0 +1,195 @@
+#!/usr/bin/expect --
+#
+# Build script for atapi hard disk test.
+#
+# Usage:
+#   ./build_atapi_hd_kernel.exp board_type
+#
+# Example:
+#   ./build_atapi_hd_kernel.exp BF548-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source make_default_config.exp
+
+cd $src_root/testsuites/common
+step "Release L1 space in kernel"
+source config_release_L1.exp
+
+cd $src_root/testsuites/common
+step "Release memory from user space"
+source config_cut_app.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Serial ATA and Parallel ATA drivers.*ATA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Blackfin 54x ATAPI support.*PATA_BF54X.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "SCSI target support.*SCSI_TGT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "SCSI disk support.*BLK_DEV_SD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "SCSI CDROM support.*BLK_DEV_SR.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Second extended fs support.*EXT2_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MSDOS fs support.*MSDOS_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VFAT \\\(Windows-95\\\) fs support.*VFAT_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Codepage 437 \\\(United States, Canada\\\).*NLS_CODEPAGE_437.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#save memory
+        -re "MMC/SD/SDIO card support \\\(MMC\\\).*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "USB support.*USB_SUPPORT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "fdisk \\\(FDISK\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs_ext2 \\\(MKFS_EXT2\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs_vfat \\\(MKFS_VFAT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "bonnie\\\+\\\+.*BR2_PACKAGE_BONNIE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

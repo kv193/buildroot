@@ -1,0 +1,18 @@
+#!/bin/bash
+
+BOARD_CONFIG=BF561-EZKIT-SMP
+BOARD_TYPE=BF561-EZKIT
+ARCH_TYPE=blackfin
+CPU=BF561
+#Default silicon revision is 0.3 but we actually use 0.5
+REVISION=0.5
+BINARY_FORMAT=flat
+ALLOCATOR=slab
+ICACHE=on
+DCACHE=on
+#BF561-EZKIT-SMP(silicon 0.5) can't support write_back
+POLICY=write_through
+UART_MODE=dma
+SMP=on
+MPU=off
+XENOMAI=off

@@ -1,0 +1,355 @@
+#!/usr/bin/expect
+
+#
+# General test for Gadget Zero driver
+#
+# Usage:
+#   ./gadget_zero_test.exp board_type
+#
+# Example:
+#   ./gadget_zero_test.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+source configs/config.exp
+
+if { $argc == 2 } {
+    set musb_mode [lindex $argv 1]
+    set TITLE [title "$argv0"]
+    append TITLE " ($musb_mode)"
+} else {
+    set TITLE [title "$argv0"]
+}
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+
+step "Start testing"
+sleep 5
+set case_num 0
+
+if [ catch {exec make clean -f Makefile.testusb -C src} ] {
+    send_user "FAIL: Make clean of testusb\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: Make clean of testusb\n"
+}
+
+if [ catch {exec make -f Makefile.testusb -C src} ] {
+    send_user "FAIL: Build testusb\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: Build testusb\n"
+}
+
+
+spawn /bin/bash
+set host_spawn_id $spawn_id
+
+incr case_num
+set timeout 15
+send "su -\r"
+while 1 {
+    expect {
+        -re "\[pP]assword" {
+            send "$password\r"
+            continue
+        }
+        -re "\[eE]rror|\[fF]ail" {
+            case_fail $case_num
+        }
+        -re "#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+send "cd $src_root/testsuites/usbdev\r"
+expect "#"
+send "lsmod |grep usbtest\r"
+while 1 {
+    expect {
+        -re "\r\n.*usbtest.*#" {
+            case_pass $case_num
+            break
+        }
+        -re "#" {
+            send "sudo modprobe usbtest\r"
+            while 1 {
+                expect {
+                    -re "modprobe:|\[eE]rror|\[fF]ail" {
+                        case_fail $case_num
+                    }
+                    -re "Module usbtest not found.*#" {
+                        send "sudo insmod $src_root/dl/usbtest.ko\r"
+                        while 1 {
+                            expect {
+                                -re "insmod:|\[eE]rror|\[fF]ail" {
+                                    case_fail $case_num
+                                }
+                                -re "#" {
+                                    case_pass $case_num
+                                    break
+                                }
+                                timeout {
+                                    send "\3"
+                                    expect "#"
+                                    case_fail $case_num
+                                }
+                            }
+                        }
+                        break
+                    }
+                    -re "#" {
+                        case_pass $case_num
+                        break
+                    }
+                    timeout {
+                        send "\3"
+                        expect "#"
+                        case_fail $case_num
+                    }
+                }
+            }
+            break
+        }
+        timeout {
+            send "\3"
+            expect "#"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "lsmod |grep usbtest\r"
+while 1 {
+    expect {
+        -re "\r\n.*usbtest.*#" {
+            case_pass $case_num
+            break
+        }
+        -re "#" {
+            case_fail $case_num
+        }
+        timeout {
+            send "\3"
+            expect "#"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 15
+send "sudo mount -t usbfs none /proc/bus/usb/\r"
+while 1 {
+    expect {
+        -re "mount: none already mounted" {
+            case_pass $case_num
+            break
+        }
+        -re "\[eE]rror|\[fF]ail" {
+            case_fail $case_num
+        }
+        -re "#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 4
+send "mount\r"
+while 1 {
+    expect {
+        -re "none on /proc/bus/usb type usbfs.*#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "lsusb\r"
+while 1 {
+    expect {
+        -re ".*#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "lsusb|grep -i \"Gadget Zero\"|awk '{print \$2\" \"\$4}'\r"
+while 1 {
+    expect {
+        -re "(\[0-9]+)( )(\[0-9]+)" {
+            set gadget_bus "$expect_out(1,string)"
+            set gadget_dev "$expect_out(3,string)"
+            send_user "gadget_bus=$gadget_bus;gadget_dev=$gadget_dev\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set Total_Count 9
+set fail_count 0
+
+incr case_num
+set timeout 5
+send "sudo ./src/testusb -D /proc/bus/usb/$gadget_bus/$gadget_dev -t14 -c 15000 -s 256 -v 1\r"
+while 1 {
+    expect {
+        -re "test 14.*\[0-9]\\\.\[0-9]+ secs" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            incr fail_count
+            send_user "testusb t14 fail\n"
+            break
+        }
+    }
+}
+
+for {set count 1} {$count <= $Total_Count} {incr count} {
+    incr case_num
+    set timeout 5
+    send "sudo ./src/testusb -D /proc/bus/usb/$gadget_bus/$gadget_dev -t$count\r"
+    while 1 {
+        expect {
+            -re "test $count.*\[0-2]\\\.\[0-9]+ secs" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                incr fail_count
+                send_user "testusb t$count fail\n"
+                break
+            }
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+send "sudo modprobe -r usbtest\r"
+while 1 {
+    expect {
+        -re "modprobe:|\[eE]rror|\[fF]ail" {
+            case_fail $case_num
+        }
+        -re "Module usbtest not found.*#" {
+            send "sudo rmmod $src_root/dl/usbtest.ko\r"
+            while 1 {
+                expect {
+                    -re "rmmod:|\[eE]rror|\[fF]ail" {
+                        case_fail $case_num
+                    }
+                    -re "#" {
+                        case_pass $case_num
+                        break
+                    }
+                    timeout {
+                        send "\3"
+                        expect "#"
+                        case_fail $case_num
+                    }
+                }
+            }
+            break
+        }
+        -re "#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "sudo umount /proc/bus/usb\r"
+while 1 {
+    expect {
+        -re "umount:|\[eE]rror|\[fF]ail" {
+            case_fail $case_num
+        }
+        -re "#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 4
+send "mount\r"
+while 1 {
+    expect {
+        -re "none on /proc/bus/usb type usbfs.*#" {
+            case_fail $case_num
+        }
+        -re "#" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+if { $fail_count == 0 } {
+    send_user "No error when running testusb\n"
+    case_pass $case_num
+} else {
+    send_user "testusb fail $fail_count times\n"
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

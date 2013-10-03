@@ -1,0 +1,18 @@
+#!/bin/bash
+
+BOARD_CONFIG=BF561-EZKIT-STD
+BOARD_TYPE=BF561-EZKIT
+ARCH_TYPE=blackfin
+CPU=BF561
+#Default silicon revision is 0.3 but we actually use 0.5
+#REVISION=default
+REVISION=0.5
+BINARY_FORMAT=flat
+ALLOCATOR=slab
+ICACHE=on
+DCACHE=on
+POLICY=write_back
+UART_MODE=dma
+SMP=off
+MPU=off
+XENOMAI=off

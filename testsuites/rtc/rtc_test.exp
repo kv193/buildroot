@@ -1,0 +1,51 @@
+#!/usr/bin/expect
+#
+# Test blackfin rtc driver on target board
+#
+# Usage:
+#   ./rtc_test.exp board_type
+#
+# Example:
+#   ./rtc_test.exp BF537-STAMP
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+set timeout 10
+expect -re $kernel_prompt
+send "\r"
+expect -re $kernel_prompt
+
+step "Start testing"
+set case_num 0
+
+incr case_num
+set timeout 500
+send -s "rtc_test\r"
+while 1 {
+    expect {
+        "RTC Tests done" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

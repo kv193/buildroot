@@ -1,0 +1,145 @@
+#!/usr/bin/expect
+#
+# Build script for audio test of multichannel.
+#
+# Usage:
+#   ./build_multichannel_kernel.exp board_type audio_dev
+#
+# Example:
+#   ./build_multichannel_kernel.exp BF537-STAMP audio_ad1836
+#
+
+source ../common/kernel_config.exp
+if { $argc < 2} {
+    puts "Please input: board_type, audio_dev"
+    puts "audio_dev: audio_ad1836, audio_ad1938"
+    exit
+}
+
+set audio_dev [lindex $argv 1]
+set audio [string trimleft [string trimleft $audio_dev audio] _]
+set log_name build_multichannel_${audio}_kernel_log
+log_file $log_name
+
+send_user "Starting $argv0\n"
+send_user "\n#### build multichannel kernel for $audio_dev\n"
+
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+cd $src_root/testsuites/common
+step "Kernel config for specified audio driver"
+source_args config_audio.exp $audio_dev
+
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Target ABI.*FDPIC.*FLAT.*FLAT_SEP_DATA.*SHARED_FLAT.*\\\[.*]" {
+            send "1\r"
+        }
+
+        -re "alsa-utils \\\(BR2_PACKAGE_ALSA_UTILS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "amixer \\\(BR2_PACKAGE_ALSA_UTILS_AMIXER\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "aplay/arecord \\\(BR2_PACKAGE_ALSA_UTILS_APLAY\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "speaker-test \\\(BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "play \\\(BR2_PACKAGE_PLAY\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

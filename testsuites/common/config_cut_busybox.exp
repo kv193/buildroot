@@ -1,0 +1,258 @@
+#!/usr/bin/expect
+
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+# Archival Utilities
+        -re "bunzip2 \\\(BUNZIP2\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "bzip2 \\\(BZIP2\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "gunzip \\\(GUNZIP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "gzip \\\(GZIP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "tar \\\(TAR\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Coreutils
+        -re "tr \\\(TR\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "du .*\\\(DU\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "env \\\(ENV\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "expr \\\(EXPR\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "head \\\(HEAD\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "md5sum \\\(MD5SUM\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "printf \\\(PRINTF\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "readlink \\\(READLINK\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "seq \\\(SEQ\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "sort \\\(SORT\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "tail \\\(TAIL\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "wc \\\(WC\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Console Utilities
+        -re "fgconsole \\\(FGCONSOLE\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "clear \\\(CLEAR\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Debian Utilities
+        -re "which \\\(WHICH\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Editors
+        -re "vi \\\(VI\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "awk \\\(AWK\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "cmp \\\(CMP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "diff \\\(DIFF\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "sed \\\(SED\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Finding Utilities
+        -re "find \\\(FIND\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "grep \\\(GREP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "xargs \\\(XARGS\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Linux Ext2 FS Progs
+        -re "fsck \\\(FSCK\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Linux System Utilities
+        -re "fdisk \\\(FDISK\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "mkfs_ext2 \\\(MKFS_EXT2\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "mkfs_vfat \\\(MKFS_VFAT\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "hexdump \\\(HEXDUMP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "lsusb \\\(LSUSB\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "more \\\(MORE\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Miscellaneous Utilities
+        -re "nandwrite \\\(NANDWRITE\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "nanddump \\\(NANDDUMP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "setserial \\\(SETSERIAL\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ubimkvol \\\(UBIMKVOL\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ubirsvol \\\(UBIRSVOL\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ubiupdatevol \\\(UBIUPDATEVOL\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Networking Utilities
+        -re "nc \\\(NC\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ftpd \\\(FTPD\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ftpget \\\(FTPGET\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ftpput \\\(FTPPUT\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ip \\\(IP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "tftp \\\(TFTP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "traceroute \\\(TRACEROUTE\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "wget \\\(WGET\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+# Process Utilities
+        -re "top \\\(TOP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "powertop \\\(POWERTOP\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "pstree \\\(PSTREE\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "pidof \\\(PIDOF\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "watch \\\(WATCH\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}

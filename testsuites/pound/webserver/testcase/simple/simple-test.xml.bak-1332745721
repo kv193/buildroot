@@ -1,0 +1,44 @@
+<response cycle="001" cvus="000" thread="001" suite="Simple" name="test_simple" step="001" number="001" type="get" result="Error" url="http://10.99.22.123/test/index.html" code="-1" description="Get /index.html" time="1332745641.57" duration="1.10283589363" traceback='Traceback (most recent call last):
+   File "/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/FunkLoadTestCase.py", line 202, in _connect
+    cert_file=self._certfile_path, method=rtype)
+   File "/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/PatchWebunit.py", line 360, in WF_fetch
+    h.endheaders()
+   File "/usr/lib/python2.6/httplib.py", line 904, in endheaders
+    self._send_output()
+   File "/usr/lib/python2.6/httplib.py", line 776, in _send_output
+    self.send(msg)
+   File "/usr/lib/python2.6/httplib.py", line 735, in send
+    self.connect()
+   File "/usr/lib/python2.6/httplib.py", line 716, in connect
+    self.timeout)
+   File "/usr/lib/python2.6/socket.py", line 507, in create_connection
+    sock.connect(sa)
+   File "&lt;string&gt;", line 1, in connect
+ KeyboardInterrupt
+' />
+<testResult cycle="001" cvus="000" thread="001" suite="Simple" name="test_simple"  time="1332745635.28" result="Failure" steps="1" duration="7.40089893341" connection_duration="1.10283589363" requests="1" pages="0" xmlrpc="0" redirects="0" images="0" links="0" traceback="Traceback (most recent call last):
+   File &quot;/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/FunkLoadTestCase.py&quot;, line 946, in __call__
+    testMethod()
+   File &quot;/home/test/work/cruise/checkouts/uclinux-dist/testsuites/webserver/testcase/simple/test_Simple.py&quot;, line 41, in test_simple
+    self.get(server_url + page, description='Get %s' % page)
+   File &quot;/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/FunkLoadTestCase.py&quot;, line 391, in get
+    method=&quot;get&quot;, load_auto_links=load_auto_links)
+   File &quot;/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/FunkLoadTestCase.py&quot;, line 299, in _browse
+    response = self._connect(url, params, ok_codes, method, description)
+   File &quot;/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/FunkLoadTestCase.py&quot;, line 202, in _connect
+    cert_file=self._certfile_path, method=rtype)
+   File &quot;/usr/local/lib/python2.6/site-packages/funkload-1.16.1-py2.6.egg/funkload/PatchWebunit.py&quot;, line 360, in WF_fetch
+    h.endheaders()
+   File &quot;/usr/lib/python2.6/httplib.py&quot;, line 904, in endheaders
+    self._send_output()
+   File &quot;/usr/lib/python2.6/httplib.py&quot;, line 776, in _send_output
+    self.send(msg)
+   File &quot;/usr/lib/python2.6/httplib.py&quot;, line 735, in send
+    self.connect()
+   File &quot;/usr/lib/python2.6/httplib.py&quot;, line 716, in connect
+    self.timeout)
+   File &quot;/usr/lib/python2.6/socket.py&quot;, line 507, in create_connection
+    sock.connect(sa)
+   File &quot;&lt;string&gt;&quot;, line 1, in connect
+ KeyboardInterrupt
+" />

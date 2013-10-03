@@ -1,0 +1,89 @@
+#!/usr/bin/expect
+#
+# Multichannel test
+#
+# Usage:
+#   ./multichannel_test.exp board_type audio_dev
+#
+# Example:
+#   ./multichannel_test.exp BF609-EZKIT audio_adau1761
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2} {
+    puts "Please input: board_type, audio_dev"
+    puts "audio_dev: audio_ad1836, audio_ad1938"
+    exit
+}
+
+set audio_dev [lindex $argv 1]
+set audio [string trimleft [string trimleft $audio_dev audio] _]
+set log_name multichannel_${audio}_test_log
+set TITLE [title "multichannel_${audio}_test"]
+log_file $log_name
+send_user "Starting $argv0\n"
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+set timeout 15
+set case_num 0
+expect -re $kernel_prompt
+
+
+if { $audio_dev == "audio_ad1836" } {
+    set channel_num 6
+} elseif { $audio_dev == "audio_ad1938" } {
+    set channel_num 8
+}
+
+set count_under_run 0
+set timeout 120
+incr case_num
+send "speaker-test -c $channel_num\r"
+while 1 {
+    expect {
+        -re "TUV|UVF|TU|UV|VF" {
+            incr count_under_run
+            continue
+        }
+        -re "LFE.*LFE.*LFE.*Time per period" {
+            send -s "\3"
+            while 1 {
+                expect {
+                    -re $kernel_prompt {
+                        case_pass $case_num
+                        break
+                    }
+                    timeout {
+                        send_user "fail to stop speaker-test\n"
+                        case_fail $case_num
+                    }
+                }
+            }
+            break
+        }
+        timeout {
+            send_user "timeout\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+if { $count_under_run == 0 } {
+    send_user "No under run error\n"
+    case_pass $case_num
+} else {
+    send_user "Under run error occurs $count_under_run times\n"
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

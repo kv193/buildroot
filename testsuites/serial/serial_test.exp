@@ -1,0 +1,974 @@
+#!/usr/bin/expect
+#
+# This is test program of serial driver.
+#
+# Usage:
+#   ./serial_test.exp board_type
+#
+# Example:
+#   ./serial_test.exp BEAGLE
+#
+
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+set target_tty /dev/$def_uart_port
+set target_file aaa
+set host_file bbb
+set save_file ccc
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Send message from host tty device to target board"
+
+set target_id $spawn_id
+set ttyflags "-icrnl -ixon igncr -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoke -hupcl -echoctl -parenb -parodd cs8 hupcl -cstopb cread clocal -crtscts min 1 time 0"
+
+incr case_num
+set timeout 3
+send -s "stty -echo;cat\r"
+while 1 {
+    expect {
+        -re "# " {
+            case_fail $case_num
+        }
+        timeout {
+            case_pass $case_num
+            break
+        }
+    }
+}
+
+
+spawn /bin/bash
+set host_id $spawn_id
+
+incr case_num
+set timeout 5
+send "\r"
+while 1 {
+    expect {
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: start console on host\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+for { set i 0 } { $i < 500 } { incr i } {
+    send "1"
+    expect {
+        "1" {}
+        timeout {
+            send_user "Fail to receive single byte in a long loop!\n"
+            case_fail $case_num
+        }
+    }
+}
+send "\n"
+expect {
+    -re $sh_prompt {
+        send_user "Succeed to receive single byte in a long loop!\n"
+        case_pass $case_num
+    }
+    timeout {
+        send_user "No prompt after receive single byte in a long loop!\n"
+        case_fail $case_num
+    }
+}
+
+incr case_num
+set timeout 20
+for { set i 0 } { $i < 30 } { incr i } {
+    if { $i > 0 } {
+        set spawn_id $host_id
+    }
+    send "echo $STRDATA > $ttydev\r"
+    while 1 {
+        expect {
+            -re $sh_prompt {
+                break
+            }
+            timeout {
+                send_user "Fail: send string to serial device in host\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    set spawn_id $target_id
+    while 1 {
+        expect {
+            "$STRDATA" {
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+#If test is failed, script will exit during above loop.
+#So this case is pass when reach here.
+case_pass $case_num
+
+
+send "\3"
+expect -re $kernel_prompt
+
+# set tty to normal on target board
+send "stty echo\r"
+expect -re $kernel_prompt
+
+incr case_num
+set timeout 3
+send "\r"
+while 1 {
+    expect {
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: can't get kernel prompt"
+            case_fail $case_num
+        }
+    }
+}
+
+
+step "On target board, give some input and check the output"
+
+incr case_num
+set timeout 5
+for { set i 0 } { $i < 30 } { incr i } {
+    send "$STRDATA\r"
+    while 1 {
+        expect {
+            -re "$STRDATA.*(No such|not found)" {
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+#If test is failed, script will exit during above loop.
+#So this case is pass when reach here.
+case_pass $case_num
+
+
+incr case_num
+set timeout 5
+send "ls /\n"
+while 1 {
+    expect {
+        -re "etc.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+send "dmesg\n"
+send "dmesg\n"
+send "dmesg\n"
+send "cat /proc/slabinfo\n"
+while 1 {
+    expect {
+        -re "slabinfo - version.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "cat /proc/kallsyms\n"
+while 1 {
+    expect {
+        "start" {
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+sleep 1
+send "\3"
+while 1 {
+    expect {
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 30
+for { set i 0 } { $i < 100 } { incr i } {
+    send "$STRDATA\n"
+}
+send -s "====================================\n"
+while 1 {
+    expect {
+        -re "=========\[']?: \[Nn]o" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+
+step "On target board, give input in vi"
+
+incr case_num
+set timeout 5
+send -s "vi\n"
+while 1 {
+    expect {
+        -re "1.*1" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+# This case is to write lots of stuff in vi
+incr case_num
+send -s "i"
+send -s "adskf\n"
+send -s "werigji\n"
+send -s "werigji\n"
+send -s "werigji\n"
+send -s "werigji\n"
+send -s "werigji\n"
+send -s "werigji\n"
+for { set i 0 } { $i < 100 } { incr i } {
+    set timeout 3
+    send -s "x"
+    while 1 {
+        expect {
+            "x" {
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+send -s "a\n"
+send -s "b\n"
+send -s "c\n"
+send -s "d\n"
+send -s "e\n"
+send -s "f\n"
+send -s "\n"
+send -s "$STRDATA"
+send -s "$STRDATA"
+send -s "$STRDATA"
+send -s "$STRDATA\n"
+for { set i 0 } { $i < 100 } { incr i } {
+    send "$STRDATA\n"
+}
+send -s "===================================#"
+set timeout 60
+while 1 {
+    expect {
+        "#" {
+            sleep 2
+            send -s "\033"
+            sleep 2
+            send -s ":q!\n"
+            sleep 2
+            send -s "\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+if { $arch == "blackfin" } {
+    step "Reboot the kernel."
+    set boot_image uImage
+    set console_args $console_null
+    source ../common/reboot_kernel.exp
+} else {
+step "Update kernel with tty disabled in inittab"
+set console $console_null
+set boot_image uImage.serial.no_tty
+
+incr case_num
+set timeout 10
+send "mount /dev/mmcblk0p1 /mnt/; sleep 2; ls /mnt\r"
+while 1 {
+    expect {
+        -re "u-boot.*$kernel_prompt" {
+            break
+        }
+        timeout {
+            send_user "Fail to mount memory card\n"
+            case_fail $case_num
+        }
+    }
+}
+
+sleep 3
+send_user "\nRun command on host: rcp /tftpboot/$boot_image root@$targetip:/mnt\n"
+if [ catch {exec rcp /tftpboot/$boot_image root@$targetip:/mnt} ] {
+    send_user "$errorInfo\n"
+    case_fail $case_num
+}
+
+incr case_num
+set timeout 20
+send "umount /mnt\r"
+while 1 {
+    expect {
+        -re "umount:.*$kernel_prompt" {
+            send_user "Fail to umount memory card\n"
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "umount timeout\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+send "reboot\r"
+while 1 {
+    expect {
+        "Hit any key" {
+            send "\r"
+            case_pass $case_num
+            break
+        }
+        " 2 " {
+            send "\r"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: get into uboot\n"
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+expect -re $uboot_prompt
+send "\r"
+expect -re $uboot_prompt
+
+incr case_num
+set timeout 5
+send "setenv ip \'$ipargs\'\r"
+expect -re $uboot_prompt
+send "setenv mmcargs \'$bootargs ip=\$\{ip\}\'\r"
+while 1 {
+    expect {
+        -re $uboot_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: set bootargs in uboot" 
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "setenv console $console\r"
+while 1 {
+    expect {
+        -re $uboot_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: set console in uboot" 
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "mmcinfo\r"
+while 1 {
+    expect {
+        -re "Capacity.*$uboot_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: get mmc info" 
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "fatload mmc \$\{mmcdev\} \$\{loadaddr\} $boot_image\r"
+while 1 {
+    expect {
+        -re "bytes read.*$uboot_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: load uimage in mmc" 
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 180
+send "run mmcboot\r"
+while 1 {
+    expect {
+        -re "login:" {
+            send_user "Fail to disable tty"
+            case_fail $case_num
+        }
+        timeout {
+            case_pass $case_num
+            break
+        }
+    }
+}
+}
+
+
+step "Get and send files through serial console"
+
+incr case_num
+set timeout 10
+send -s "\x81"
+send -s "c"
+while 1 {
+    expect {
+        "ermit>" {
+            break
+        }
+        timeout {
+            send_user "Fail: back to kermit error\n"
+            case_fail $case_num
+        }
+    }
+}
+
+send -s "q\r"
+while 1 {
+    expect {
+        "Closing *OK" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: close kermit timeout\n"
+            case_fail $case_num
+        }
+    }
+}
+
+####################################################
+# Bellow case is to send file from host to target. #
+####################################################
+spawn /bin/bash
+set telnet_id $spawn_id
+
+set timeout 3
+expect -re $sh_prompt
+
+incr case_num
+set timeout 5
+send "telnet $targetip\r"
+while 1 {
+    expect {
+        -re "\[lL]ogin:" {
+            sleep .5
+            send "$login_user\r"
+            continue
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: inital telnet\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "cat /proc/cmdline\r"
+while 1 {
+    expect {
+        -re "console=$console_null.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: set console to $console_null\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send -s "cat /proc/kallsyms > /$save_file\r"
+while 1 {
+    expect {
+        -re "cat:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: save file\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send -s "stty -F $target_tty ispeed $baud_rate ospeed $baud_rate $ttyflags\r"
+while 1 {
+    expect {
+        -re "stty:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: set uart speed.\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send -s "cat $target_tty > /$target_file\r"
+while 1 {
+    expect {
+        -re "cat:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            send_user "Fail: should not exit cat so quickly\n"
+            case_fail $case_num
+        }
+        timeout {
+            break
+        }
+    }
+}
+
+set spawn_id $host_id
+
+set timeout 3
+expect -re $sh_prompt
+
+incr case_num
+set timeout 5
+send -s "rcp root@$targetip:/$save_file .\r"
+while 1 {
+    expect {
+        -re "rcp:.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Failed to rcp $target_file to host.\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send -s "stty -F $ttydev ispeed $baud_rate ospeed $baud_rate $ttyflags\r"
+while 1 {
+    expect {
+        -re "stty:.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: set tty timeout\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 180
+send -s "time cat $save_file > $ttydev\r"
+while 1 {
+    expect {
+        -re "cat:.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re "sys.*$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Fail: send data timeout\n"
+            break
+        }
+    }
+}
+
+set spawn_id $telnet_id
+
+sleep 3
+incr case_num
+set timeout 5
+send "\r"
+while 1 {
+    expect {
+        -re $kernel_prompt {
+            send_user "\nFail to cat tty device on target board\n"
+            case_fail $case_num
+        }
+        timeout {
+            send_user "\nStill cat tty device on target board\n"
+            case_pass $case_num
+            break
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "\3"
+while 1 {
+    expect {
+        -re $kernel_prompt {
+            send_user "Catted file is saved on target.\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 60
+send "diff -u /$save_file /$target_file\r"
+while 1 {
+    expect {
+        -re "\\\+\\\+\\\+" {
+            expect -re $kernel_prompt
+            case_fail $case_num
+        }
+        -re "(differ|diff:).*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+####################################################
+# Bellow case is to send file from target to host. #
+####################################################
+
+incr case_num
+set timeout 10
+send "stty -F $target_tty ispeed $baud_rate ospeed $baud_rate $ttyflags\r"
+while 1 {
+    expect {
+        -re "stty:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Failed to set uart speed on target board.\n"
+            case_fail $case_num
+        }
+    }
+}
+
+set spawn_id $host_id
+
+set timeout 5
+expect -re $sh_prompt
+
+incr case_num
+set timeout 10
+send "stty -F $ttydev ispeed $baud_rate ospeed $baud_rate $ttyflags\r"
+while 1 {
+    expect {
+        -re "stty:.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re "$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "Failed to set uart speed on host.\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send "cat $ttydev > $host_file\r"
+while 1 {
+    expect {
+        -re "cat:.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            send_user "Fail to cat on host.\n"
+            case_fail $case_num
+        }
+        timeout {
+            send_user "Wait to receive data\n"
+            case_pass $case_num
+            break
+        }
+    }
+}
+
+set spawn_id $telnet_id
+
+set timeout 3
+expect -re $kernel_prompt
+
+incr case_num
+set timeout 180
+send "time cat /$save_file > $target_tty\r"
+while 1 {
+    expect {
+        -re "cat:.*$kernel_prompt" {
+            case_fail $case_num
+        }
+        -re "sys.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+	    send_user "Fail: cat /$save_file to $target_tty timeout in target"
+            case_fail $case_num
+        }
+    }
+}
+
+set spawn_id $host_id
+
+sleep 3
+incr case_num
+set timeout 5
+send "ls\r"
+while 1 {
+    expect {
+        -re $sh_prompt {
+            send_user "\nFail to cat tty device on host.\n"
+            case_fail $case_num
+        }
+        timeout {
+            send_user "\nStill cat tty device on host.\n"
+            break
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "\3"
+while 1 {
+    expect {
+        -re $sh_prompt {
+            send_user "Catted file is saved on host.\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 60
+send "diff -u $host_file $save_file\r"
+while 1 {
+    expect {
+        -re "\\\+\\\+\\\+" {
+            expect -re $sh_prompt
+            case_fail $case_num
+        }
+        -re "(differ|diff:).*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+
+if { $board_type == "BEAGLE" || $board_type == "PANDA" } {
+    step "Clean image on card and reboot kernel to normal"
+
+    set spawn_id $telnet_id
+
+    incr case_num
+    set timeout 10
+    send "mount /dev/mmcblk0p1 /mnt/; sleep 2; ls /mnt\r"
+    while 1 {
+        expect {
+            -re "u-boot.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Fail to mount memory card\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    set timeout 10
+    send "rm /mnt/uImage.serial*\r"
+    while 1 {
+        expect {
+            -re "rm:.*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re $kernel_prompt {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Fail to remove image on memory card\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    set timeout 20
+    send "umount /mnt\r"
+    while 1 {
+        expect {
+            -re "umount:.*$kernel_prompt" {
+                send_user "Fail to umount memory card\n"
+                case_fail $case_num
+            }
+            -re $kernel_prompt {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "umount timeout\n"
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    set timeout 20
+    send "reboot\r"
+    while 1 {
+        expect {
+            "Connection closed by foreign host" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                send_user "Fail: reboot\n"
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

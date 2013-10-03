@@ -1,0 +1,107 @@
+#!/usr/bin/expect
+#
+# Test adv7511 driver on BF609-EZKIT.
+# Display 720p yuv file through HDMI port on BF609-EZKIT.
+#
+# Usage:
+#   ./video_encoder_test.exp board_type
+#
+# Example:
+#   ./video_encoder_test.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+set timeout 10
+expect -re $kernel_prompt
+send "\r"
+expect -re $kernel_prompt
+
+step "Start testing"
+set case_num 0
+
+# Prepare adv7842.yuv for auto test; in manual test, use video_decoder_adv7842.yuv from video_decoder test
+if [ catch {exec rcp $src_root/dl/adv7842.yuv root@$targetip:/} ] {
+    send_user "FAIL: rcp test file to target\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: rcp test file to target\n"
+}
+
+send "v4l2_video_display -h\r"
+expect -re $kernel_prompt
+
+set timeout 10
+incr case_num
+send "v4l2_video_display -F /adv7842.yuv\r"
+while 1 {
+    expect {
+        -re "\[eE]rror|\[fF]ail|Hardware Trace|SIGSEGV" {
+            case_fail $case_num
+        }
+        -re "stream on success" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+# Disable for auto test
+while 0 {
+set timeout 60
+incr case_num
+send_user "\n\nIf picture with good quality is shown on TV, press \"y/Y\" and enter, otherwise press \"n/N\":\n"
+while 1 {
+    expect_user {
+        -re "\[yY]" {
+            case_pass $case_num
+            break
+        }
+        -re "\[nN]" {
+            case_fail $case_num
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+}
+# End: disable for auto test
+
+set timeout 10
+incr case_num
+send "\3"
+while 1 {
+    expect {
+        -re "\[eE]rror|\[fF]ail|Hardware Trace|SIGSEGV" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

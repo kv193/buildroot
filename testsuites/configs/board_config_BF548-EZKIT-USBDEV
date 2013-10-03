@@ -1,0 +1,17 @@
+#!/bin/bash
+
+BOARD_CONFIG=BF548-EZKIT-USBDEV
+BOARD_TYPE=BF548-EZKIT
+ARCH_TYPE=blackfin
+CPU=BF548
+REVISION=default
+BINARY_FORMAT=flat
+ALLOCATOR=slab
+ICACHE=on
+DCACHE=on
+#BF548-EZKIT can't support write_back
+POLICY=write_through
+UART_MODE=dma
+SMP=off
+MPU=off
+XENOMAI=off

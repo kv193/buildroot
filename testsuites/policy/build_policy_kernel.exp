@@ -1,0 +1,235 @@
+#!/usr/bin/expect
+#
+# Build kernel before all tests start.
+#
+# Usage:
+#   ./build_policy_kernel.exp board_type cpu revision binary_format allocator icache dcache policy uart_mode smp mpu xenomai
+#
+# Example:
+#   ./build_policy_kernel.exp BF537-STAMP BF537 0.2 flat slab on on write_back dma off off off
+#
+
+source  ../common/kernel_config.exp
+
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make clean."
+if { [source make_clean.exp] != 0 } {
+    send_user "\n\nFail to make clean. Exit!\n\n"
+    exit
+}
+
+cd $src_root/testsuites/common
+step "Make default config"
+source  make_default_config.exp
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+if { $arch == "blackfin" } {
+    cd $src_root/testsuites/common
+    step "Make config for specified bfin format"
+    source_args make_bfin-format.exp $binary_format
+}
+
+
+step "Make user space config"
+cd $src_root
+set timeout 1000
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -nocase -re "Target Architecture\r\n.*(\[0-9]+). $arch .*\\\[.*]" {
+                send "$expect_out(1,string)\r"
+        }
+
+        -re "Target ABI.*\[cC]hoice\\\[.*]" {
+            if { $binary_format == "fdpic" } {
+                send  "1\r"
+            } elseif { $binary_format == "flat" } {
+                send  "2\r"
+            } elseif { $binary_format == "shared-flat" } {
+                send  "4\r"
+            } else {
+                send  "\r"
+            }
+        }
+
+#        -re "Toolchain has IPv6 support.*BR2_TOOLCHAIN_EXTERNAL_INET_IPV6.*\\\[.*]" {
+#            send "Y\r"
+#        }
+
+#        -re "Toolchain has WCHAR support.*BR2_TOOLCHAIN_EXTERNAL_WCHAR.*\\\[.*]" {
+#            send "Y\r"
+#        }
+
+        -re "Target CPU revision.*BR2_GCC_TARGET_CPU_REVISION.*\\\[.*]" {
+            if { $revision == "default" } {
+                send  "\r"
+            } else {
+                send "$revision\r"
+            }
+        }
+
+        -re "Xenomai.*BR2_PACKAGE_XENOMAI.*\\\[.*]" {
+            if { $xenomai == "on" } {
+                send "Y\r"
+            } elseif { $xenomai == "off" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            exit
+        }
+    }
+}
+
+step "Make kernel config for the first time"
+cd $src_root
+set timeout 1000
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -nocase -re "Choose SLAB allocator.* (\[0-9]+). $allocator .*\[cC]hoice.*\\\[.*]" {
+            if { $allocator == "default" } {
+                send  "\r"
+            } else {
+                send "$expect_out(1,string)\r"
+            }
+        }
+
+        -re "CPU.* (\[0-9]+). $cpu .*\[cC]hoice.*\\\[.*]" {
+            send "$expect_out(1,string)\r"
+        }
+
+        -re "Silicon Rev.* (\[0-9]+). $revision .*\[cC]hoice.*\\\[.*]" {
+            if { $revision == "default" } {
+                send  "\r"
+            } else {
+                send "$expect_out(1,string)\r"
+            }
+        }
+
+        -re "Enable ICACHE.*BFIN_ICACHE.*\\\[.*]" {
+            if { $icache == "on" } {
+                send "Y\r"
+            } elseif { $icache == "off" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Enable DCACHE.*BFIN_DCACHE.*\\\[.*]" {
+            if { $dcache == "on" } {
+                send "Y\r"
+            } elseif { $dcache == "off" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "\[Pp]olicy.*Write back.*BFIN_EXTMEM_WRITEBACK.*Write through.*BFIN_EXTMEM_WRITETHROUGH.*\[cC]hoice.*\\\[.*]" {
+            if { $policy == "write_back" && $board_type != "BF548-EZKIT" } {
+                send "1\r"
+            } elseif { $policy == "write_through" } {
+                send "2\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Enable the memory protection unit.*MPU.*\\\[.*]" {
+            if { $mpu == "on" } {
+                send "Y\r"
+            } elseif { $mpu == "off" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -nocase -re "UART Mode.* (\[0-9]+). $uart_mode mode .*\[cC]hoice\\\[.*]" {
+            if { $uart_mode == "default" } {
+                send  "\r"
+            } else {
+                send "$expect_out(1,string)\r"
+            }
+        }
+
+        -re "Symmetric multi-processing support.*SMP.*\\\[.*]" {
+            if { $smp == "on" } {
+                send "Y\r"
+            } elseif { $smp == "off" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

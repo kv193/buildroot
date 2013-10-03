@@ -1,0 +1,36 @@
+#!/usr/bin/expect
+
+set file_name $argv0
+set bfin_format [lindex $argv 0]
+
+if { $arch == "blackfin" && $file_name != "./build_policy_kernel.exp" } {
+    cd $src_root/testsuites/common
+    step "Make clean"
+    if { [source make_clean.exp] != 0 } {
+        send_user "\n\nFail to make clean. Exit!\n\n"
+        exit
+    }
+}
+
+
+if { $file_name != "./build_policy_kernel.exp" } {
+    cd $src_root/testsuites/common
+    step "Make default config"
+    source make_default_config.exp
+}
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for config_bfin-format.exp,
+# and change to the specified bfin binary formats.
+if { $arch == "blackfin" } {
+    cd $src_root/testsuites/common
+    source_args config_bfin-format.exp $bfin_format
+}
+
+# This step should be done after buildroot is cleaned
+# and user space config is configured.
+if { $arch == "blackfin" && $file_name != "./build_policy_kernel.exp" } {
+    cd $src_root/testsuites/common
+    step "Restore kernel config of policy"
+    source restore_kernel_config.exp
+}

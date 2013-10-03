@@ -1,0 +1,184 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit."
+source ../common/spawn_kermit.exp
+
+step "Reboot the kernel."
+
+if { $board_type == "BF537-STAMP" || $board_type == "BF561-EZKIT" || $board_type == "BF548-EZKIT" || [string match "BF527-EZKIT*" $board_type] || $board_type == "BF609-EZKIT" } {
+    set bootargs  $bootargs_param4
+}
+
+set boot_image vmImage
+source ../common/reboot_kernel.exp
+
+step "Starting test."
+set case_num 0
+
+incr case_num
+send -s "ifconfig eth0 $targetip \r"
+while 1 {
+   expect {
+     -re "$kernel_prompt" {
+         puts "ifconfig success.\n"
+         case_pass $case_num
+         break
+      }
+
+      timeout {
+         break
+         }
+     }
+}
+
+incr case_num
+send "ls /lib\r"
+while 1 {
+    expect {
+        -re "$kernel_prompt" {
+            break
+        }
+        timeout {
+            break
+        }
+    }
+}
+
+incr case_num
+send "cd /bin\r"
+while 1 {
+    expect {
+        "bin" {
+            set flag 1
+            break
+        }
+        timeout {
+            break
+        }
+    }
+}
+
+set timeout 500
+expect "root:/bin>"
+set path [exec pwd ]
+set path [exec find $path/../../output/build -name  file_operation_test* ]
+send_user "Path is $path\n"
+cd $path
+ 
+incr case_num
+if [ catch { exec find . -maxdepth 2 -type f -perm +100 -name *\[^g\]\[^d\]\[^b\]  -exec rcp \{\}  root@$targetip:/bin/  \; } ] {
+    send_user "\nFAIL: Copy file test to target board\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "\nPASS: Copy file test to target board\n"
+}
+
+send -s  "./fs_test.sh\r"
+while 1 {
+    expect {
+        "Execution completed" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+sleep 3
+send -s  "cp /bin/Test* $ftp_dir\r"
+while 1 {
+    expect {
+        -re "$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 10
+send -s "du TestFailed.log\r"
+while 1 {
+    expect {
+        -re "(\[0-9]+)\[x20\t\]TestFailed\.log" {
+            set FileSize $expect_out(1,string)
+            expect ">"
+            puts " FileSize $expect_out(1,string)"
+            break
+        }
+        timeout {
+            break
+        }
+    }
+}
+
+if { $FileSize == 0 } {
+    case_pass $case_num
+} else {
+    case_fail $case_num
+}
+
+set timeout 500
+spawn ftp $targetip
+while 1 {
+    expect {
+        "):" { }
+        timeout {
+            send_user "Failed first return\n"
+            break
+        }
+    }
+    send -s "root\r"
+    expect {
+        "ftp>" { }
+        timeout {
+            send_user "Failed first return\n"
+            break
+        }
+    }
+
+    send -s "get TestOverall.log\r"
+    expect {
+        -re "Operation successful.*ftp>" { }
+        timeout {
+            send_user "Failed first return\n"
+            break
+        }
+    }
+
+    send -s "get TestResults.log\r"
+    expect {
+        -re "Operation successful.*ftp>" { }
+        timeout {
+            send_user "Failed first return\n"
+            break
+        }
+    }
+
+    send -s "bye\r"
+    expect {
+        eof  {
+            break
+    }
+        timeout {
+            send_user "Failed first return\n"
+            break
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

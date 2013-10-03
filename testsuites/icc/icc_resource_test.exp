@@ -1,0 +1,114 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit."
+source ../common/spawn_kermit.exp
+
+step "Reboot the kernel."
+set bootargs  $bootargs_param6
+source ../common/reboot_kernel.exp
+
+step "Starting test"
+set timeout 8
+
+set case_num 0
+
+incr case_num
+
+send -s "cd /bin\r"
+while 1 {
+   expect {
+      "root:/bin>" {
+            break
+      }
+
+      timeout {
+         break
+         }
+     }
+}
+
+expect "root:/bin>"
+send -s "./icc_loader -l ./icc \r"
+while 1 {
+   expect {
+     -re "OK" {
+                case_pass $case_num
+                break
+      }
+
+     -re "Hardware Trace" {
+         case_fail $case_num
+         break
+      }
+
+      timeout {
+                case_fail $case_num
+                exit
+      }
+      }
+}
+sleep 3
+send -s "\r"
+expect {
+       -re  "root:/bin>" {
+                case_pass $case_num
+       }
+
+       timeout {
+                case_fail $case_num
+                exit
+       }
+}
+
+set timeout 80
+incr case_num
+send -s "./icc_loader -e ./icc_resource \r"
+while 1 {
+   expect {
+     -re "icc_task_init" {
+               case_pass $case_num
+               break
+      }
+
+     -re "execption (\[0-9a-fA-F]+) " {
+            set execption_id $expect_out(1,string)
+            if { $execption_id != "26" && $execption_id != "2c" } {
+               case_fail $case_num
+            }
+      send_log "Execption!\n"
+      }
+
+     -re "Hardware Trace" {
+         case_fail $case_num
+         break
+      }
+
+      timeout {
+                case_fail $case_num
+                exit
+      }
+      }
+}
+
+send_user "Please push button SW10 to see if LED1 is lighted!\n"
+expect {
+       -re "pint irq .*handle gpio irq.*$kernel_prompt>" {
+                case_pass $case_num
+       }
+
+       timeout {
+                case_fail $case_num
+                exit
+       }
+}
+
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

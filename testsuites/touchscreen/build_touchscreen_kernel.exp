@@ -1,0 +1,253 @@
+#!/usr/bin/expect
+#
+# Build script for touchscreen test.
+#
+# Usage:
+#   ./build_touchscreen_kernel.exp board_type
+#
+# Example:
+#   ./build_touchscreen_kernel.exp BF537-STAMP
+#
+# Set chip select to 1 or change chip select parameter in file stamp.c.
+# Refer to doc about touchscreen
+# After build image, boot up system and run "event_test /dev/input/event0"
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Enable UART0.*SERIAL_BFIN_UART0.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Enable UART1.*SERIAL_BFIN_UART1.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Virtual terminal.*VT.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Framebuffer Console support.*FRAMEBUFFER_CONSOLE.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Map the console to the primary display device.*FRAMEBUFFER_CONSOLE_DETECT_PRIMARY.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Select compiled-in fonts.*FONTS.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Mini 4x6 font.*FONT_MINI_4x6.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Bootup logo.*LOGO.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "224-colour Blackfin Processor Linux logo.*LOGO_BLACKFIN_CLUT224.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Support most SPI Flash chips.*MTD_M25P80.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Support for frame buffer devices.*FB.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "SHARP LQ035Q1DH02 TFT LCD.*FB_BFIN_LQ035Q1.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "Generic input layer.*needed for keyboard\, mouse.*\\\[././.*]" {
+            send "Y\r"
+        }
+
+        -re "Event interface.*INPUT_EVDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Touchscreens.*INPUT_TOUCHSCREEN.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "AD7877 based touchscreens.*TOUCHSCREEN_AD7877.*\\\[.*]" {
+            if { $board_type != "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "Analog Devices.*touchscreen interface.*TOUCHSCREEN_AD7879.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "support SPI bus connection.*TOUCHSCREEN_AD7879_SPI.*\\\[.*]" {
+            if { $board_type == "BF526-EZBRD" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "Blackfin BF54x keypad support.*KEYBOARD_BFIN.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+
+        }
+
+        -re "Sound card support.*SOUND.*\\\[.*]" {
+            send "N\r"
+        }
+
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "event test.*BR2_PACKAGE_EVENT_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "video test program.*BR2_PACKAGE_VIDEO_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

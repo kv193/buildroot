@@ -1,0 +1,23 @@
+#!/usr/bin/expect
+
+set file_name $argv0
+
+cd $src_root
+
+if {[ catch { exec grep -ic "$board_type" .config } errmsg ] || $file_name == "./build_policy_kernel.exp"} {
+    send_user "Force to make default config for policy or wrong config or missing config!\n"
+    set timeout 60
+    spawn make $board_defconfig
+    while 1 {
+        expect {
+            "configuration written to" {}
+            eof { break }
+            timeout {
+                send_user "\n\nERROR: make default config timeout\n"
+                break
+            }
+        }
+    }
+} else {
+    send_user "config exits, skip make default config!\n"
+}

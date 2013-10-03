@@ -1,0 +1,151 @@
+#!/usr/bin/expect
+#
+# This file can't be indepently executed.
+# It needs to be included into build***kernel.exp scripts.
+#
+# Reduce kernel size as much as possible;
+# When unused kernel modules are disabled, rootfs size is also reduced.
+#
+
+cd $src_root
+step "kernel config reduction"
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Enable ZFLAT support.*BINFMT_ZFLAT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Suspend to RAM and standby.*SUSPEND.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "CAN bus subsystem support.*CAN.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "IrDA \\\(infrared\\\) subsystem support.*IRDA.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "SCSI device support.*SCSI.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "WIZnet devices.*NET_VENDOR_WIZNET.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Generic input layer.*needed for keyboard, mouse.*INPUT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Virtual terminal.*VT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Blackfin JTAG Communication.*BFIN_JTAG_COMM.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Blackfin Userspace DMA Interface.*BFIN_DMA_INTERFACE.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "I2C support \\\(I2C\\\).*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "SPI support.*SPI.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "Hardware Monitoring support.*HWMON.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Watchdog Timer Support.*WATCHDOG.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "Support for frame buffer devices.*FB.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Backlight & LCD device support.*BACKLIGHT_LCD_SUPPORT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Sound card support.*SOUND.*\\\[.*]" {
+            send -s "N\r"
+        }
+
+        -re "USB support.*USB_SUPPORT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Real Time Clock.*RTC_CLASS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "IOMMU Hardware Support.*IOMMU_SUPPORT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Second extended fs support \\\(EXT2_FS\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+        -re "Journalling Flash File System.*JFFS2_FS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "NFS client support.*NFS_FS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "ISO 9660 CDROM file system support.*ISO9660_FS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "UDF file system support.*UDF_FS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "VFAT \\\(Windows-95\\\) fs support.*VFAT_FS.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "CRC-CCITT functions.*CRC_CCITT.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}

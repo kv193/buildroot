@@ -1,0 +1,240 @@
+#!/usr/bin/expect
+#
+# Build script for QT test.
+# We build it using default user config and don't cut size to check if all default apps are ok.
+#
+# Usage:
+#   ./build_qt_kernel.exp board_type
+#
+# Example:
+#   ./build_qt_kernel.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+cd $src_root/testsuites/common
+step "Kernel config for tft lcd driver"
+source_args config_tftlcd.exp built-in
+
+cd $src_root/testsuites/common
+step "Kernel config for specified usb host"
+source_args config_usb.exp musb
+
+if { $board_type == "BF548-EZKIT" } {
+    cd $src_root/testsuites/common
+    step "Make config to cut app"
+    source config_cut_app.exp
+}
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+# configuration for usb mouse and keyboard in IPNUT and HID drivers;
+# USB has already been configured in previous script
+        -re "Generic input layer.*needed for keyboard, mouse.*INPUT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Mouse interface.*INPUT_MOUSEDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Horizontal screen resolution.*INPUT_MOUSEDEV_SCREEN_X.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "480\r"
+            } elseif { $board_type == "BF609-EZKIT" } {
+                send "800\r"
+            } else {
+                send "320\r"
+            }
+        }
+
+        -re "Vertical screen resolution.*INPUT_MOUSEDEV_SCREEN_Y.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "272\r"
+            } elseif { $board_type == "BF609-EZKIT" } {
+                send "480\r"
+            } else {
+                send "240\r"
+            }
+        }
+
+        -re "Event interface.*INPUT_EVDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Keyboards.*INPUT_KEYBOARD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Mice.*INPUT_MOUSE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "HID bus support \\\(HID\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "USB HID transport layer.*USB_HID.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "video test program.*BR2_PACKAGE_VIDEO_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Qt \\\(BR2_PACKAGE_QT\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Compile and install demos and examples.*\\\(BR2_PACKAGE_QT_DEMOS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Approve free license.*BR2_PACKAGE_QT_LICENSE_APPROVED.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "24 bpp.*BR2_PACKAGE_QT_PIXEL_DEPTH_24.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "32 bpp.*BR2_PACKAGE_QT_PIXEL_DEPTH_32.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "linux input.*BR2_PACKAGE_QT_MOUSE_LINUXINPUT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "tslib.*BR2_PACKAGE_QT_MOUSE_TSLIB.*\\\[.*]" {
+            if { $board_type == "BF609-EZKIT" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "linux input.*BR2_PACKAGE_QT_KEYBOARD_LINUXINPUT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "libts.*The Touchscreen tslib Library.*BR2_PACKAGE_TSLIB.*\\\[.*]" {
+# Attention: tslib only supports fdpic format
+            if { $board_type == "BF609-EZKIT" } {
+                send "Y\r"
+            } else {
+                send "N\r"
+            }
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+step "Make image without unused qt demos and examples"
+if [ catch {exec rm -fr $src_root/output/target/usr/share/qt/demos} ] {
+    send_user "$errorInfo\n"
+}
+if [ catch {exec mv $src_root/output/target/usr/share/qt/examples/widgets/calendarwidget $src_root/output/target/usr/share/qt/} ] {
+    send_user "$errorInfo\n"
+}
+if [ catch {exec rm -fr $src_root/output/target/usr/share/qt/examples} ] {
+    send_user "$errorInfo\n"
+}
+if [ catch {exec mkdir -p $src_root/output/target/usr/share/qt/examples/widgets/} ] {
+    send_user "$errorInfo\n"
+}
+if [ catch {exec mv $src_root/output/target/usr/share/qt/calendarwidget $src_root/output/target/usr/share/qt/examples/widgets/} ] {
+    send_user "$errorInfo\n"
+}
+
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

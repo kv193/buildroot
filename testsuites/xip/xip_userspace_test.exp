@@ -1,0 +1,258 @@
+#!/usr/bin/expect
+#
+# XIP test in user space.
+# Root file system is initramfs.
+# Test application is run in additional ROM file systems.
+#
+# Usage:
+#   ./xip_userspace_test.exp board_type binary_format
+#
+# Example:
+#   ./xip_userspace_test.exp BF537-STAMP fdpic
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2} {
+    puts "Please input:board_type, binary format (fdpic or shared-flat)"
+    exit
+}
+set format [lindex $argv 1]
+set TITLE [title "$argv0"]
+append TITLE " ($format)"
+set log_name xip_userspace_${format}_test_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_user "\n#### binary format is $format. ####\n"
+
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Start testing."
+
+if { $board_type == "BF548-EZKIT" } {
+    set max_image_size  0x5FFFF
+} else {
+    set max_image_size  0x4FFFF
+}
+
+if { $board_type == "BF533-EZKIT" } {
+    set test_start_addr      0x20100000
+} else {
+    set test_start_addr      0x$rootfs_start_addr
+}
+
+set test_end_addr 0x[format "%08x" [expr $test_start_addr + $max_image_size]]
+set romfs_image     img.romfs
+set xip_test_ver [exec grep XIP_TEST_VERSION $src_root/package/xip_test/xip_test.mk | awk {{print $3}}]
+set case_num 0
+
+incr case_num
+send_user "genromfs -f $src_root/output/target/img.romfs -d $src_root/output/build/xip_test-${xip_test_ver}\n"
+if [ catch {exec genromfs -f $src_root/output/target/img.romfs -d $src_root/output/build/xip_test-${xip_test_ver}} ] {
+    send_user "FAIL: generate romfs\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: generate romfs\n"
+    case_pass $case_num
+}
+
+incr case_num
+send_user "cp $src_root/output/target/img.romfs /tftpboot\n"
+if [ catch {exec cp $src_root/output/target/img.romfs /tftpboot} ] {
+    send_user "FAIL: copy img.romfs to /tftpboot\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: copy img.romfs to /tftpboot\n"
+    case_pass $case_num
+}
+
+
+send_user "Try to figure out if we are in u-boot or the kernel"
+set where_are_we 0
+send "version\r"
+set timeout 20
+expect {
+    "U-Boot" {
+        send_user "We are in u-boot\n"
+        set where_are_we "uboot"
+    }
+
+    "Linux" {
+        send_user "We are in the kernel\n"
+        set where_are_we "kernel"
+    }
+
+    timeout {
+        send_user "Can't tell if we are in u-boot or the kernel\n"
+    }
+}
+
+if { $where_are_we == "uboot" } {
+    set timeout 50
+    expect -re $uboot_prompt
+    send_user "sending reset\n"
+    send "reset\r"
+} else {
+    if { $where_are_we == "kernel" } {
+        set timeout 60
+        expect -re $kernel_prompt
+        send_user "sending reboot\n"
+        send "reboot\r"
+    } else {
+        set timeout 10
+        expect "*"
+        expect "*"
+        send_user "sending control-C\n"
+        send "\3"
+        sleep 1
+        send "\r"
+    }
+}
+
+while 1 {
+    expect {
+        "Hit any key " {
+            send "\r"
+        }
+
+        -re $uboot_prompt {
+            send_user "successful reset attemp\n"
+            break
+        }
+
+        timeout {
+            send_user "failed reset attemp\n"
+            break
+        }
+    }
+}
+
+incr case_num
+set timeout 20
+send -s "tftpboot 0x1000000 $romfs_image\r"
+while 1 {
+    expect {
+        -re "Bytes transferred = \[0-9]+ \\\((\[0-9a-fA-F]+) hex\\\).*$uboot_prompt" {
+            set image_size 0x$expect_out(1,string)
+            send_user "Image size is $image_size\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ERROR: Uboot locked up during tftp\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 80
+send -s "protect off $test_start_addr $test_end_addr\r"
+while 1 {
+    expect {
+        -re "Un-Protected.*$uboot_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ERROR: unprotect failed\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 240
+send -s "erase $test_start_addr $test_end_addr\r"
+while 1 {
+    expect {
+        -re "Erased.*$uboot_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ERROR: erase failed\n"
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 60
+send -s "cp.b 0x1000000 $test_start_addr $image_size\r"
+while 1 {
+    expect {
+        -re "done.*$uboot_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            send_user "ERROR: cp failed\n"
+            case_fail $case_num
+        }
+    }
+}
+
+
+step "Reboot the kernel."
+# To add following line here to indicate that if the bootargs is different,
+# it could be set here. If the bootargs value is 0, it needn't be stated,
+# for it is the default value.
+# set bootargs  $bootargs_param0
+source ../common/kernel_boot.exp
+sleep 10
+send "\r"
+expect -re $kernel_prompt
+
+incr case_num
+set timeout 5
+send "mount -t romfs /dev/mtdblock2 /mnt\r"
+while 1 {
+    expect {
+        -re "\[f]Fail|\[e]Error|mount:" {
+            case_fail $case_num
+        }
+        -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+set timeout 5
+send "/mnt/xip_test\r"
+while 1 {
+    expect {
+        -re "Code is at (0x\[0-9a-f]+)!\r\n$kernel_prompt" {
+            set func_addr $expect_out(1,string)
+            send_user "Function address is $func_addr\n"
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+incr case_num
+if { $func_addr > $test_start_addr && $func_addr < $test_end_addr } {
+    send_user "Function address $func_addr is in romfs region: $test_start_addr - $test_end_addr\n"
+    case_pass $case_num
+} else {
+    send_user "Function address $func_addr is not in romfs region: $test_start_addr - $test_end_addr\n"
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,149 @@
+#!/usr/bin/expect
+
+cd $src_root
+set timeout 300
+spawn make linux-config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Memory Technology Device .*MTD.* support.*MTD.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+#        -re "MTD partitioning support.*MTD_PARTITIONS.*\\\[.*]" {
+#            send -s "Y\r"
+#        }
+#
+        -re "Direct char device access to MTD devices.*MTD_CHAR.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Caching block device access to MTD devices.*MTD_BLOCK.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "dosfstools.*BR2_PACKAGE_DOSFSTOOLS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkdosfs.*BR2_PACKAGE_DOSFSTOOLS_MKDOSFS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mtd/jffs2 utilities.*BR2_PACKAGE_MTD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "mkfs.jffs2.*BR2_PACKAGE_MTD_MKFSJFFS2.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_erase.*BR2_PACKAGE_MTD_FLASH_ERASE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_eraseall.*BR2_PACKAGE_MTD_FLASH_ERASEALL.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_lock.*BR2_PACKAGE_MTD_FLASH_LOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "flash_unlock.*BR2_PACKAGE_MTD_FLASH_UNLOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        # Disable this config to use copy command cp normally.
+        -re "Non-POSIX, but safer, copying to special nodes.*USER_BUSYBOX_FEATURE_NON_POSIX_CP.*\\\[.*]" {
+            send "N\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+spawn make mtd-reconfigure
+set timeout 1200
+set make_status failure
+while 1 {
+    expect {
+        "\\\(*) \\\[*]" {
+            sleep .05
+            send "\r"
+        }
+        -re "rm.*\.fakeroot" { set make_status success }
+        "Error" {set make_status failure }
+        eof { break }
+    }
+}
+
+if { $make_status == "failure" } {
+    puts "ERROR: Error somewhere during make"
+    exit
+}
+

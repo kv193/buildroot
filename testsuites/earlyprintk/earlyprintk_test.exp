@@ -1,0 +1,137 @@
+#!/usr/bin/expect
+#
+# earlyprintk test
+#
+# Usage:
+#   ./earlyprintk_test.exp board_type
+#
+# Example:
+#   ./earlyprintk_test.exp BF537-STAMP
+#
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Reboot kernel"
+
+set uboot_flag 0
+set timeout 8
+send "\r"
+while 1 {
+    expect {
+        -re "\[lL]ogin:" {
+            sleep .5
+            send "$login_user\r"
+            continue
+        }
+        -re "\[Pp]assword:" {
+            sleep .5
+            send "$password\r"
+            expect -re $kernel_prompt
+            break
+        }
+        -re $kernel_prompt {
+            break
+        }
+        -re $uboot_prompt {
+            set uboot_flag 1
+            break
+        }
+        timeout {
+            send_user "Fail: no kernel response" 
+            exit
+        }
+    }
+}
+
+if { $uboot_flag == 1 } {
+    send -s "reset\r"
+    send_user "sending reset\n"
+} else {
+    send -s "reboot\r"
+    send_user "sending reboot\n"
+}
+
+set timeout 60
+while 1 {
+    expect {
+        -re "RAM: +(\[0-9]+) Mi?B" {
+            set ram_size $expect_out(1,string)
+            send_user "\nRAM size is $ram_size MB\n"
+        }
+        "Hit any key " {
+            send "\r"
+            break
+        }
+        timeout {
+            send_user "Fail to reboot the kernel into u-boot\n"
+            break
+        }
+    }
+}
+
+expect -re $uboot_prompt
+send -s "set console $console_args\r"
+expect -re $uboot_prompt
+send -s "set bootargs $bootargs\r"
+expect -re $uboot_prompt
+send -s "save\r"
+expect -re $uboot_prompt
+
+set bootcmd bootm
+set bootaddr_low 0x1000000
+set bootaddr_high 0x2000000
+
+if { $ram_size <= 32 } {
+    set bootaddr $bootaddr_low
+} else {
+    set bootaddr $bootaddr_high
+}
+
+send -s "tftpboot $bootaddr $boot_image\r"
+while 1 {
+    expect {
+        -re "Bytes transferred = \[0-9]+ \\\((\[0-9a-fA-F]+) hex\\\).*$uboot_prompt" {
+            set image_size $expect_out(1,string)
+            send_user "Image size is $image_size\n"
+            break
+        }
+        timeout {
+            send_user "Fail to tftp download linux image."
+            #if tftpboot from high bootaddr failed, try to reload image from low bootaddr
+            break
+        }
+    }
+}
+
+send -s "run addip\r"
+expect -re $uboot_prompt
+
+set timeout 180
+send -s "$bootcmd $bootaddr\r"
+
+step "Start testing"
+set case_num 0
+incr case_num
+set timeout 60
+while 1 {
+    expect {
+        -re "Test early printk" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+            break
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

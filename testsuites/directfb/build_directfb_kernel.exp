@@ -1,0 +1,208 @@
+#!/usr/bin/expect
+#
+# Build Kernel for directfb test
+#
+# Usage:
+#   ./build_directfb_kernel.exp board_type
+#
+# Example:
+#   ./build_directfb_kernel.exp BF537-STAMP
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+cd $src_root/testsuites/common
+step "Kernel config for tft lcd driver"
+source_args config_tftlcd.exp built-in
+
+cd $src_root/testsuites/common
+step "Kernel config for specified usb host"
+if { $board_type == "BF537-STAMP" } {
+    source_args config_usb.exp usbhost_isp1362
+} else {
+    source_args config_usb.exp musb
+}
+
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+# Large cache is required for video related test on bf609-ezkit
+        -re "Uncached DMA region.*(\[0-9]). Enable 32M DMA region.*DMA_UNCACHED_32M.*\[cC]hoice.*\\\[.*]" {
+            if { $board_type == "BF609-EZKIT" } {
+                send "$expect_out(1,string)\r"
+            } else {
+                send "\r"
+            }
+        }
+
+# Virtual terminal & frame buffer
+        -re "Virtual terminal.*VT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Framebuffer Console support.*FRAMEBUFFER_CONSOLE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Select compiled-in fonts.*FONTS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Mac console 6x11 font.*FONT_6x11.*\\\[.*]" {
+            send "Y\r"
+        }
+
+# Input and HID
+        -re "Generic input layer.*needed for keyboard, mouse.*INPUT.*\\\[./.*]" {
+            send "Y\r"
+        }
+
+        -re "Mouse interface.*INPUT_MOUSEDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Horizontal screen resolution.*INPUT_MOUSEDEV_SCREEN_X.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "480\r"
+            } else {
+                send "320\r"
+            }
+        }
+
+        -re "Vertical screen resolution.*INPUT_MOUSEDEV_SCREEN_Y.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "272\r"
+            } else {
+                send "240\r"
+            }
+        }
+
+        -re "Event interface.*INPUT_EVDEV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Keyboards.*INPUT_KEYBOARD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Mice.*INPUT_MOUSE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "USB HID transport layer.*USB_HID.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "video test program.*BR2_PACKAGE_VIDEO_TEST.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "directfb \\\(BR2_PACKAGE_DIRECTFB\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "build with generic.*mem support.*BR2_PACKAGE_DIRECTFB_DEVMEM.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "directfb examples.*\\\(BR2_PACKAGE_DIRECTFB_EXAMPLES\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "df_.*BR2_PACKAGE_DIRECTFB_EXAMPLES_.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Target ABI.*FDPIC.*FLAT.*FLAT_SEP_DATA.*SHARED_FLAT.*\\\[.*]" {
+            send "1\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,435 @@
+#!/usr/bin/expect
+
+source  ../common/board_info.exp
+
+# directory and file locations
+set workspace_root /home/test/workspace
+if { [info exists env(NODE_NAME)] } {
+    set src_root $workspace_root/src/kernel/label/$env(NODE_NAME)
+} elseif { [info exists env(BOARD_CONFIG)] } {
+    set src_root $workspace_root/src/kernel/label/$env(BOARD_CONFIG)
+} else {
+    set src_root $workspace_root/src/kernel
+}
+set kernel_root $src_root/linux/linux-kernel
+set custom_kernel $src_root/output/build/linux-custom
+set log_loc $workspace_root/logs
+
+set ttydev /dev/ttyS0
+set ttyUSBdev /dev/ttyUSB0
+set kermit_ttydev $ttydev
+set sh_prompt "\[-@:].*\[$>#]"
+set uboot_prompt "(Panda #|OMAP3 beagleboard.org #|bfin>)"
+set kernel_prompt "(\r\n# |root:\[^>].*>)"
+#set kernel_prompt "(\r\n# |\r\nroot:\[^>].*>)"
+
+# Some kernel options are not conform to basic pattern of "xxx (xxx) [x/x/x/?]"
+# And it looks like "xxx [x/x/x/?]".
+# Add this variable to handle these anomalous options.
+set anomalous_option "USB Gadget Drivers|Platform Glue Layer|USB Peripheral Controller"
+
+set targetip 10.100.4.50
+set serverip 10.100.4.174
+set count  30
+set PING_COUNT  1999
+set login_user "root"
+set password "blackfin"
+set console_null "null"
+set send_slow {1 .1}
+set bootaddr_low 0x1000000
+set bootaddr_high 0x2000000
+set name test
+set ftp_dir /srv/ftp
+set STRDATA "abcdefghijklmnopqrstuvwxyz0123456789"
+set spi_board_type normal
+set boot_image uImage
+
+# environment settings
+
+if { $arch == "arm" } {
+
+    set eth_dev "eth0"
+    set usb_eth_dev "eth1"
+    set baud_rate "115200"
+    set def_uart_port ttyO2
+
+    set console_args "$def_uart_port,${baud_rate}n8"
+} elseif { $arch == "blackfin" } {
+
+    set max_mem 64
+    set res_mem 60
+
+    set eth_dev "eth0"
+    set usb_eth_dev "eth1"
+
+    if { [ catch { set def_uart_port_num [  exec grep  CONFIG_SERIAL_BFIN_UART.*=y $kernel_root/arch/blackfin/configs/$board_type\_defconfig | head -1 | awk  -F= {{print $1}}  ]  } ] } {
+        set def_uart_port_num 0
+        puts "$board_type\_defconfig not found. Set def_uart_port_num to 0.\n"
+    } else {
+        set def_uart_port_num [ string index $def_uart_port_num end ]
+        puts "$board_type\_defconfig is found. Set def_uart_port_num to $def_uart_port_num.\n"
+    }
+
+    set baud_rate "57600"
+    set def_uart_port ttyBF$def_uart_port_num
+    set console_args "$def_uart_port,$baud_rate"
+    set bootargs "root=/dev/mtdblock0 rw ip=$targetip earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=\$\{console\}"
+}
+
+if { $board_type == "BEAGLE" } {
+
+    set ipargs "$targetip:$serverip:$serverip:255.255.255.0:beagle:eth0:off"
+    set bootargs "setenv bootargs console=\$\{console\} mpurate=\$\{mpurate\} vram=\$\{vram\} omapfb.mode=dvi:\$\{dvimode\} omapfb.debug=y omapdss.def_disp=\$\{defaultdisplay\} root=\$\{mmcroot\} rootfstype=\$\{mmcrootfstype\}"
+
+} elseif { $board_type == "PANDA" } {
+
+    set ipargs "$targetip:$serverip:$serverip:255.255.255.0:panda:eth0:off"
+    set bootargs "setenv bootargs console=\$\{console\} vram=\$\{vram\} root=\$\{mmcroot\} rootfstype=\$\{mmcrootfstype\}"
+} elseif { $board_type == "BF537-STAMP" } {
+
+    set max_mem 64
+    set res_mem 60
+    set res_mem_addr 0x02000000
+
+} elseif { $board_type == "BF609-EZKIT" } {
+    set max_mem 128
+    set res_mem 64
+    set res_mem_addr 0x04000000
+
+}
+
+set bootargs_param1 "root=/dev/mtdblock0 rw mem=${res_mem}M max_mem=${max_mem}M console=$console_args"
+set bootargs_param2 "root=/dev/nfs rw nfsroot=$serverip:/tftpboot/romfs,tcp,nfsvers=3 rootdelay=1 earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+set bootargs_param3 "rw rootfstype=jffs2 earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+
+if [ info exists pnor_rootfs_num ] {
+    set bootargs_param4 "root=/dev/mtdblock$pnor_rootfs_num rw rootfstype=jffs2 earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+    set bootargs_param5 "root=/dev/mtdblock[ expr $pnor_rootfs_num - 1 ] ro rootfstype=romfs earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+}
+
+set bootargs_param6 "root=/dev/mtdblock0 rw mem=[expr $max_mem - 4]M max_mem=${max_mem}M icc_l2_mem=0x8000 earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+#bootargs_param7 is reserved for serial uart test
+set bootargs_param9 "root=/dev/mtdblock0 rw ip=$targetip earlyprintk=serial,uart0,$baud_rate console=tty0 console=\$\{console\}"
+set bootargs_param10 "root=/dev/mtdblock0 rw earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=ttyBFJC0,$baud_rate"
+
+if [ info exists nand_rootfs_num ] {
+set bootargs_param11  "ubi.mtd=$nand_rootfs_num root=ubi0:ubifs1 rw rootfstype=ubifs earlyprintk=serial,uart$def_uart_port_num,$baud_rate console=$console_args"
+#puts "nand_rootfs_num is found. Set bootargs_param11 $bootargs_param11.\n "
+}
+
+set compressed_kernel_only_image  vmImage
+set kernel_and_ext2_image   linux.ext2
+set kernel_and_cramfs_image linux.cramfs
+set kernel_and_romfs_image  uImage.romfs
+
+set compressed_kernel_and_ext2_image   uImage.ext2
+set compressed_kernel_and_cramfs_image uImage.cramfs
+
+set ext2_rootfs_image    rootfs.ext2
+set jffs2_rootfs_image   rootfs.jffs2
+set yaffs_rootfs_image   rootfs.yaffs
+set ubifs_rootfs_image   rootfs.ubifs
+set romfs_rootfs_image   rootfs.romfs
+set HAVE_JFFS2_IMAGE     0
+set HAVE_KERNEL_ONLY_IMAGE     0
+set HAVE_ROMFS_IMAGE     0
+
+set linux_version "not found"
+set gcc_version "not found"
+set user-dist_version "not found"
+set map_text "not found"
+set map_data "not found"
+set map_bss "not found"
+set map_rootfs "not found"
+set map_stack "not found"
+set instruction_cache_boot_flag "not found"
+set data_cache_boot_flag "not found"
+set TITLE "undefined"
+
+set CACHE_ENABLED           "enabled"
+set CACHE_DISABLED          "disabled"
+
+set step_sequence_number    1
+set start_date [ exec date +%s ]
+set end_date $start_date 
+
+# Command source_args can pass arguments while running source.
+proc source_args {file args} {
+    set argv $::argv
+    set argc $::argc
+    set ::argv $args
+    set ::argc [llength $args]
+    set code [catch {uplevel [list source $file]} return]
+    set ::argv $argv
+    set ::argc $argc
+    return -code $code $return
+}
+
+proc log_file_name { file_name } {
+    return [ exec echo "$file_name" | sed "s/\\.exp/_log/g" | sed "s/\\.\\(\[a-zA-Z\]\\)/_\\1/g" | sed "s/\\(\.\*\\)\\(_\.\*_log\\)\\(\.\*\\)/\\1\\3\\2/g" ]
+}
+
+proc title { file_name } {
+    return [ exec echo "$file_name" | sed "s/_/ /g" | sed "s/\\.\\/\\(\.\*\\).exp/\\1/g" | tr 'a-z' 'A-Z' ]
+}
+
+proc test_period {} {
+
+    global start_date
+    global end_date
+    set end_date [ exec date +%s ] 
+#   send_user "\nStart time: $start_date, End time: $end_date!\n"
+    return [ expr $end_date - $start_date ]  
+}
+
+proc step { message } {
+    global step_sequence_number
+
+    puts "\n*******************************************************************"
+    puts "STEP $step_sequence_number: $message\n\n"
+    send_log "\n************** STEP $step_sequence_number: $message\n\n"
+    incr step_sequence_number
+}
+
+proc case_pass { casenum } {
+    send_user "\nCase $casenum ...PASS\n"
+    send_log "\nCase $casenum ...PASS\n"
+}
+
+proc case_fail { casenum } {
+    global TITLE
+    global log_loc
+
+    if {[ catch { eval exec grep -nrl {"$TITLE"} [glob $log_loc/\*/test_summary/pass_summary] } errmsg ]} {
+        send_user "\nLast passed test result is not found!!\n"
+    } else {
+        set pass_files [ eval exec grep -nrl {"$TITLE"} [glob $log_loc/\*/test_summary/pass_summary] ]
+        set last_pass_dir [exec echo $pass_files | awk -F/ {{print $6}} | sort -n | tail -n 1 ]
+        send_user "\nLast passed time: $last_pass_dir\n"
+
+        if {[ catch { exec grep "User-dist commit" $log_loc/$last_pass_dir/kernel_test_log } errmsg ]} {
+            send_user "User-dist commit: not found!\n"
+        } else {
+            set last_pass_ucdist [exec grep "User-dist commit" $log_loc/$last_pass_dir/kernel_test_log ]
+            send_user "$last_pass_ucdist\n"
+        }
+
+        if {[ catch { exec grep "Kernel commit" $log_loc/$last_pass_dir/kernel_test_log } errmsg ]} {
+            send_user "Kernel commit: not found!\n"
+        } else {
+            set last_pass_kernel [exec grep "Kernel commit" $log_loc/$last_pass_dir/kernel_test_log ]
+            send_user "$last_pass_kernel\n"
+        }
+
+        if {[ catch { exec grep "Testsuites commit" $log_loc/$last_pass_dir/kernel_test_log } errmsg ]} {
+            send_user "Testsuites commit: not found!\n"
+        } else {
+            set last_pass_tsuite [exec grep "Testsuites commit" $log_loc/$last_pass_dir/kernel_test_log ]
+            send_user "$last_pass_tsuite\n"
+        }
+    }
+
+    send_user "\nCase $casenum ...FAIL\n"
+    send_log "\nCase $casenum ...FAIL\n"
+    send_user "\n$TITLE FAIL\n"
+    send_log "$TITLE ............\[FAIL\]\n"
+
+    send_log "Test Period is: [ test_period ] seconds.\n"
+    exit
+}
+
+proc all_pass {} {
+    global TITLE
+
+    send_log "\n"
+    send_log "\n$TITLE ............\[PASS\]\n"
+    send_log "Test Period is: [ test_period ] seconds.\n"
+}
+
+proc decide_smp {} {
+    global smp_flag 
+    global smp_prog 
+    global kernel_prompt
+ 
+    send "uname -a\n"
+    while 1 {
+        expect {
+            -re "SMP.*$kernel_prompt" {
+                set smp_flag 1
+                set smp_prog taskset 
+                send_user "\nIt's a SMP kernel!\n"
+                break
+            }
+            -re $kernel_prompt {
+                set smp_flag ""
+                set smp_prog "" 
+                send_user "\nIt's not a SMP kernel.\n"
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+# Light up backlight for tftlcd in bf609-ezkit
+proc start_backlight {} {
+    global case_num
+    global kernel_prompt
+
+    incr case_num
+    send "cd /sys/class/gpio; ls\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re "gpiochip112.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    send "echo 112 > export; ls\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re "gpio112.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    send "cd gpio112; ls\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re "direction.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    send "cat direction; cat value\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re "in.*0.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    # After this step, backlight should be light up.
+    incr case_num
+    send "echo high > direction\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re $kernel_prompt {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    incr case_num
+    send "cat direction; cat value\r"
+    while 1 {
+        expect {
+            -re "(\[eE]rror|\[fF]ail|No such).*$kernel_prompt" {
+                case_fail $case_num
+            }
+            -re "out.*1.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    send "cd\r"
+    expect -re $kernel_prompt
+}
+
+proc before_boot {} {
+    global def_uart_port
+    global baud_rate
+    global uboot_prompt
+    global console_args
+
+    set timeout 5
+    send "setenv console $console_args\r"
+    while 1 {
+        expect {
+            -re $uboot_prompt {
+                break
+            }
+            timeout {
+                send_user "Fail: set console in uboot" 
+                exit
+            }
+        }
+    }
+
+    set timeout 10
+    send "mmcinfo\r"
+    while 1 {
+        expect {
+            -re "Capacity.*$uboot_prompt" {
+                break
+            }
+            timeout {
+                send_user "Fail: get mmc info" 
+                exit
+            }
+        }
+    }
+
+    set timeout 10
+    send "run loaduimage\r"
+    while 1 {
+        expect {
+            -re "bytes read.*$uboot_prompt" {
+                break
+            }
+            timeout {
+                send_user "Fail: load uimage in mmc" 
+                exit
+            }
+        }
+    }
+}

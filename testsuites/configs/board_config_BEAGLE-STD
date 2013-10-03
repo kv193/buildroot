@@ -1,0 +1,16 @@
+#!/bin/bash
+
+BOARD_CONFIG=BEAGLE-STD
+BOARD_TYPE=BEAGLE
+ARCH_TYPE=arm
+CPU=default
+REVISION=default
+BINARY_FORMAT=default
+ALLOCATOR=slab
+ICACHE=default
+DCACHE=default
+POLICY=default
+UART_MODE=default
+SMP=on
+MPU=default
+XENOMAI=off

@@ -1,0 +1,173 @@
+#!/usr/bin/expect
+#
+# * Test adv7842 driver on BF609-EZKIT.
+#   Now we support 720p60 input from port HDMIA on BF609-EZKIT and generate yuv file.
+#   Check yuv file on PC with PYUV tool.
+# * Test adv7183 driver on BF561-EZKIT.
+#   Input signal is a standard analog baseband television signal compatible with NTSC or PAL,
+#   then decoded into 4:2:2 component video data compatible with 16-bit/8-Bit CCIR601/CCIR656 8-Bit standards.
+#   Use ffmpeg to encode and send video dato to UDP port.
+#
+# Usage:
+#   ./video_decoder_test.exp board_type video_input
+#
+# Example:
+#   ./video_decoder_test.exp BF561-EZKIT
+#   ./video_decoder_test.exp BF609-EZKIT
+#   ./video_decoder_test.exp BF609-EZKIT hdmi
+#   ./video_decoder_test.exp BF609-EZKIT composite
+#
+
+source ../common/kernel_config.exp
+
+if { $argc >= 2} {
+    set video_input [lindex $argv 1]
+}
+
+if { $board_type == "BF561-EZKIT" } {
+    set video_dev adv7183
+    set video_input composite
+} elseif { $board_type == "BF609-EZKIT" } {
+    set video_dev adv7842
+    if { ![info exists video_input] } {
+        set video_input hdmi
+    }
+} else {
+    puts "Wrong board type, only BF561-EZKIT and BF609-EZKIT support this test\r"
+    exit
+}
+
+if { $video_input == "composite" } {
+    set video_input_num 0
+} elseif { $video_input == "hdmi" } {
+    set video_input_num 4
+}
+
+set TITLE [title "$argv0"]
+append TITLE " ($video_dev)"
+set log_name video_decoder_${video_dev}_test_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_user "\n#### video decoder is $video_dev\n"
+
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+set timeout 10
+expect -re $kernel_prompt
+send "\r"
+expect -re $kernel_prompt
+
+step "Start testing"
+set case_num 0
+
+set timeout 5
+incr case_num
+send "dmesg |grep video\r"
+while 1 {
+    expect {
+        -re "Linux video capture interface.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 10
+incr case_num
+send "dmesg |grep capture\r"
+while 1 {
+    expect {
+        -re "v4l2 sub device registered.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+if { $board_type == "BF561-EZKIT" } {
+    set timeout 20
+    incr case_num
+    send "ffmpeg -f video4linux2 -s ntsc -pix_fmt uyvy422 -r 5 -i /dev/video0 -f mjpeg udp://$serverip:1234\r"
+    while 1 {
+        expect {
+            -re "\[eE]rror|\[fF]ail|Hardware Trace|SIGSEGV" {
+                case_fail $case_num
+            }
+            -re "Stream mapping.*kbits/s" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+
+    sleep 15
+
+    set timeout 10
+    incr case_num
+    send "q"
+    while 1 {
+        expect {
+            -re "\[eE]rror|\[fF]ail|Hardware Trace|SIGSEGV" {
+                case_fail $case_num
+            }
+            -re "video.*audio.*global headers.*muxing overhead.*$kernel_prompt" {
+                case_pass $case_num
+                break
+            }
+            timeout {
+                case_fail $case_num
+            }
+        }
+    }
+}
+
+send "v4l2_video_capture -h\r"
+expect -re $kernel_prompt
+
+set timeout 10
+incr case_num
+send "v4l2_video_capture -I $video_input_num -F /video_decoder_$video_dev.yuv\r"
+while 1 {
+    expect {
+        -re "\[eE]rror|\[fF]ail|Hardware Trace|SIGSEGV" {
+            case_fail $case_num
+        }
+        -re "frames captured.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+if [ catch {exec rcp root@$targetip:/video_decoder_$video_dev.yuv ./} ] {
+    send_user "FAIL: rcp video to host PC\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    send_user "PASS: rcp video to host PC\n"
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,158 @@
+#!/usr/bin/expect
+#
+# Build script for network performance test.
+#
+# Usage:
+#   ./build_ethernet_kernel.exp board_type extra_config
+#
+# Example:
+#   ./build_ethernet_kernel.exp BEAGLE normal
+#
+
+source ../common/kernel_config.exp
+
+set extra_config "normal"
+
+if { $argc >= 2} {
+    set extra_config [lindex $argv 1]
+}
+if { $extra_config == "normal" } {
+    log_file [log_file_name $argv0]
+} else {
+    log_file build_ethernet_${extra_config}_kernel_log
+}
+
+source ../common/board_info.exp
+send_user "Starting $argv0\n"
+
+if { $extra_config == "in_buffer" || $extra_config == "normal" } {
+    send_log "\n#### Extra config is $extra_config.\n"
+} else {
+    send_log "\n#### This config $extra_config is not supported. Sorry.\n"
+    exit
+}
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+cd $src_root/testsuites/common
+source config_cut_app.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Use L1 memory for rx/tx packets.*BFIN_MAC_USE_L1.*\\\[.*]" {
+            if { $extra_config == "in_buffer" } {
+                send -s "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Number of transmit buffer packets.*BFIN_TX_DESC_NUM.*\\\[.*]" {
+            if { $extra_config == "in_buffer" } {
+                send -s "100\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "Number of receive buffer packets.*BFIN_RX_DESC_NUM.*\\\[.*]" {
+            if { $extra_config == "in_buffer" } {
+                send -s "500\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "netperf.*BR2_PACKAGE_NETPERF.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Target ABI.*BFIN_FDPIC.*BFIN_FLAT.*BFIN_FLAT_SEP_DATA.*BFIN_SHARED_FLAT.*\\\[.*]" {
+            if { $arch == "blackfin" } {
+                send "1\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

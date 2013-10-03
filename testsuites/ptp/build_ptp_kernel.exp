@@ -1,0 +1,192 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp fdpic
+
+# Following make specific configuration for this case.
+
+#tee "Begin the interactive process of configuration"
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Enable eventpoll support.*EPOLL.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Enable timerfd.*system call.*TIMERFD.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Networking support.*NET.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Timestamping in PHY devices.*NETWORK_PHY_TIMESTAMPING.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "PPS support.*PPS.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "PTP clock support.*PTP_1588_CLOCK.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Network device support.*NETDEVICES.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        ####### Configs for BF518F-EZBRD ####################
+         -re "Ethernet .*10 or 100Mbit.*NET_ETHERNET.*\\\[.*]" {
+           if { $board_type == "BF518F-EZBRD" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+         -re "Blackfin on-chip MAC support.*BFIN_MAC.*\\\[.*]" {
+           if { $board_type == "BF518F-EZBRD" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+        -re "Use IEEE 1588 hwstamp.*BFIN_MAC_USE_HWSTAMP.*\\\[.*]" {
+           if { $board_type == "BF518F-EZBRD" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+        ####### Configs for BF609-EZKIT ####################
+         -re "STMicroelectronics devices.*NET_VENDOR_STMICRO.*\\\[.*]" {
+           if { $board_type == "BF609-EZKIT" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+         -re "STMicroelectronics 10/100/1000 Ethernet driver.*STMMAC_ETH.*\\\[.*]" {
+           if { $board_type == "BF609-EZKIT" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+        -re "STMMAC platform bus support.*STMMAC_PLATFORM.*\\\[.*]" {
+           if { $board_type == "BF609-EZKIT" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+        -re "STMMAC ieee1588 hw timestamp support.*STMMAC_IEEE1588.*\\\[.*]" {
+           if { $board_type == "BF609-EZKIT" } {
+                send -s "Y\r"
+            } else {
+                send -s "\r"
+            }
+        }
+
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "linuxptp.*BR2_PACKAGE_LINUXPTP.*\\\[.*]" {
+              send -s "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+
+step "Make"
+
+source  make_kernel.exp
+
+cd $src_root/testsuites/common
+
+step "Copy linux"
+
+source   copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

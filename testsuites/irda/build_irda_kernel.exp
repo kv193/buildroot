@@ -1,0 +1,161 @@
+#!/usr/bin/expect
+
+#
+# Build script for irda dirver: irtty
+#
+# Usage:
+#   ./build_irda_kernel.exp board_type
+#
+# Example:
+#   ./build_irda_kernel.exp BF609-EZKIT
+#
+
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source  make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "IrDA \\\(infrared\\\) subsystem support.*IRDA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Fast RRs.*low latency.*IRDA_FAST_RR.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "IrTTY \\\(uses Linux serial driver\\\).*IRTTY_SIR.*\\\[.*]" {
+            send "M\r"
+        }
+
+        -re "Blackfin SIR on UART \\\(BFIN_SIR\\\) \\\[.*]" {
+            send "N\r"
+        }
+
+#BF533-STAMP: only one UART, don't send console info to serial port, reserve for IRTTY_SIR
+        -re "Console on Blackfin serial port.*SERIAL_BFIN_CONSOLE.*\\\[.*]" {
+            if { $board_type == "BF533-STAMP" } {
+                send "N\r"
+            } else {
+                send "\r"
+            }
+        }
+
+#BF537: default serial port is on UART0, open UART1 for IRTTY_SIR
+        -re "Enable UART1.*SERIAL_BFIN_UART1.*\\\[.*]" {
+            if { $board_type == "BF537-STAMP" || $board_type == "BF609-EZKIT" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+#BF548: default serial port is on UART1, open UART3 for IRTTY_SIR
+        -re "Enable UART3.*SERIAL_BFIN_UART3.*\\\[.*]" {
+            if { $board_type == "BF548-EZKIT" } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+#BF527: default serial port is on UART1, open UART0 for IRTTY_SIR
+        -re "Enable UART0.*SERIAL_BFIN_UART0.*\\\[.*]" {
+            if { [string match "BF527-EZKIT*" $board_type] } {
+                send "Y\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "irda-utils.*BR2_PACKAGE_IRDA_UTILS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "irattach.*BR2_PACKAGE_IRDA_UTILS_IRATTACH.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "irdaping.*BR2_PACKAGE_IRDA_UTILS_IRDAPING.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

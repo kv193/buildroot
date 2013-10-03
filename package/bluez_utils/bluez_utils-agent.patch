@@ -1,0 +1,20 @@
+--- bluez_utils/Makefile.in	2012-08-22 11:44:21.426110977 +0800
++++ bluez_utils.agent/Makefile.in	2012-08-22 11:46:21.646112386 +0800
+@@ -337,7 +337,8 @@
+ @TOOLS_TRUE@	tools/hcitool$(EXEEXT) tools/sdptool$(EXEEXT) \
+ @TOOLS_TRUE@	tools/ciptool$(EXEEXT)
+ @DFUTOOL_TRUE@am__EXEEXT_3 = tools/dfutool$(EXEEXT)
+-@TEST_TRUE@am__EXEEXT_4 = test/l2test$(EXEEXT) test/rctest$(EXEEXT)
++@TEST_TRUE@am__EXEEXT_4 = test/l2test$(EXEEXT) test/rctest$(EXEEXT) \
++@TEST_TRUE@	test/bdaddr$(EXEEXT) test/agent$(EXEEXT)
+ @HIDD_TRUE@am__EXEEXT_5 = compat/hidd$(EXEEXT)
+ @PAND_TRUE@am__EXEEXT_6 = compat/pand$(EXEEXT)
+ @DUND_TRUE@am__EXEEXT_7 = compat/dund$(EXEEXT)
+@@ -353,7 +354,6 @@
+ @TEST_TRUE@	test/scotest$(EXEEXT) test/attest$(EXEEXT) \
+ @TEST_TRUE@	test/hstest$(EXEEXT) test/avtest$(EXEEXT) \
+ @TEST_TRUE@	test/ipctest$(EXEEXT) test/lmptest$(EXEEXT) \
+-@TEST_TRUE@	test/bdaddr$(EXEEXT) test/agent$(EXEEXT) \
+ @TEST_TRUE@	test/btiotest$(EXEEXT) test/test-textfile$(EXEEXT)
+ @TOOLS_TRUE@am__EXEEXT_13 = tools/hciattach$(EXEEXT) \
+ @TOOLS_TRUE@	tools/hciconfig$(EXEEXT)

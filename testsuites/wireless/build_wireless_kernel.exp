@@ -1,0 +1,214 @@
+#!/usr/bin/expect
+#
+# Build script for cf wifi driver test.
+#
+# Usage:
+#   ./build_wireless_kernel.exp board_type
+#
+# Example:
+#   ./build_wireless_kernel.exp BF537-STAMP
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+step "Make default config"
+source make_default_config.exp
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Re-program Clocks while Kernel boots.*BFIN_KERNEL_CLOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VCO Multiplier.*VCO_MULT.*\\\[.*]" {
+            send "20\r"
+        }
+
+        -re "Core Clock Divider.*choice.*\\\[.*]" {
+            send "1\r"
+        }
+
+        -re "System Clock Divider.*SCLK_DIV.*\\\[.*]" {
+            send "8\r"
+        }
+
+        -re "Sound card support.*SOUND.*\\\[.*]" {
+            #avoid GPIO confliction with ad1836
+            send "N\r"
+        }
+
+#PCMCIA
+        -re "PCCard.*PCMCIA/CardBus.*support.*PCCARD.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "16-bit PCMCIA support.*PCMCIA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Load CIS updates from userspace.*PCMCIA_LOAD_CIS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Blackfin CompactFlash PCMCIA Driver.*BFIN_CFPCMCIA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Bank 3.*\\\(BANK_3\\\).*\\\[.*]" {
+            send -s "0xFFC3\r"
+        }
+
+#wireless stack
+        -re "Wireless \\\(WIRELESS\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "cfg80211 - wireless configuration API.*CFG80211.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Wireless extensions sysfs files.*WIRELESS_EXT_SYSFS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Generic IEEE 802.11 Networking Stack \\\(mac80211\\\).*MAC80211.*\\\[.*]" {
+            send "Y\r"
+        }
+
+#wireless driver
+        -re "Wireless LAN.*WLAN.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Hermes chipset 802.11b support.*Orinoco.Prism2.Symbol.*HERMES.*\\\[.*]" {
+            send "M\r"
+        }
+
+        -re "Support Prism.*HERMES_PRISM.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Cache Hermes firmware on driver initialisation.*HERMES_CACHE_FW_ON_INIT.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Hermes PCMCIA card support.*PCMCIA_HERMES.*\\\[.*]" {
+            send "M\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "udhcp client.*\\\(UDHCPC\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "wireless tools.*BR2_PACKAGE_WIRELESS_TOOLS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

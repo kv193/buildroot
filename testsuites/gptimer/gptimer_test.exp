@@ -1,0 +1,106 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit."
+source ../common/spawn_kermit.exp
+
+step "Reboot the kernel."
+source ../common/reboot_kernel.exp
+
+if { $board_type == "BF609-EZKIT" } {
+    set board_num 609
+    set timer_in 1
+    set timer_out 3
+} elseif { $board_type == "BF537-STAMP" } {
+    set board_num 537
+    set timer_in 0
+    set timer_out 1
+}
+
+step "Starting test"
+set timeout 8
+
+set case_num 0
+
+incr case_num
+
+send -s "cd /bin\r"
+while 1 {
+   expect {
+      "root:/bin>" {
+            break
+      }
+
+      timeout {
+         break
+         }
+     }
+}
+
+expect "root:/bin>"
+send -s "./simple_timer_test -m 5 -b $board_num\r"
+while 1 {
+   expect {
+     -re "root:/bin" {
+                case_pass $case_num
+                break
+      }
+
+     -re "Hardware Trace" {
+         case_fail $case_num
+         break
+      }
+
+      timeout {
+                case_fail $case_num
+                exit
+      }
+      }
+}
+set timeout 30
+send -s "cat /proc/bfin_simple_timer\r"
+while 1 {
+expect {
+       -re  "sclk = (\[0-9]+).*\r\n" {
+                set SCLK $expect_out(1,string)
+                send_log "\nSCLK is $SCLK !\n"
+       }
+
+       -re  "timer  $timer_in isr count: (\[0-9]+)\r\n" {
+                set ISR_in $expect_out(1,string)
+                send_log "\nISR_in is $ISR_in !\n"
+       }
+
+       -re  "timer  $timer_out isr count: (\[0-9]+)\r\n" {
+                set ISR_out $expect_out(1,string)
+                send_log "\nISR_out is $ISR_out !\n"
+       }
+
+        -re "root:/bin" {
+                break
+       }
+
+       timeout {
+                case_fail $case_num
+                exit
+       }
+}
+}
+
+incr case_num
+send_user "Check if SCLK is in the right range\n"
+if { [ expr $SCLK/10000000.0*5 - $ISR_in ] >= 0 &&  [ expr $SCLK/10000000.0*5 - $ISR_out ] < 10 } {
+    case_pass $case_num
+} else {
+    send_user "\n"
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

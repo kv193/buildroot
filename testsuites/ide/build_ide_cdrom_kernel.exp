@@ -1,0 +1,196 @@
+#!/usr/bin/expect
+
+source ../common/kernel_config.exp
+source  ../common/board_info.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+
+cd $src_root/testsuites/common
+
+step "Make config."
+
+source  make_default_config.exp
+
+# Following make specific configuration for this case.
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        -re "Re-program Clocks while Kernel boots.*BFIN_KERNEL_CLOCK.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VCO Multiplier.*VCO_MULT.*\\\[.*]" {
+            send "14\r"
+        }
+
+        -re "Core Clock Divider.*CCLK_DIV.*\\\[.*]" {
+            send "1\r"
+        }
+
+        -re "System Clock Divider.*SCLK_DIV.*\\\[.*]" {
+            send "5\r"
+        }
+
+        -re "SCSI device support.*SCSI.*\\\[.*]" {
+            send -s "Y\r"
+        }
+        
+        -re "SCSI CDROM support.*BLK_DEV_SR.*\\\[.*]" {
+            send -s "Y\r"
+        }
+
+        -re "Serial ATA.*and Parallel ATA.*drivers.*ATA.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Generic platform device PATA support.*PATA_PLATFORM.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "ISO 9660 CDROM file system support.*ISO9660_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "MSDOS fs support.*MSDOS_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "VFAT.*Windows-95.*fs support.*VFAT_FS.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Default NLS Option.*NLS_DEFAULT.*\\\[.*]" {
+            send "\r"
+        }
+
+        -re "Codepage 437.*United States.*Canada.*NLS_CODEPAGE_437.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Codepage 850.*Europe.*NLS_CODEPAGE_850.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "NLS ISO 8859-1.*Latin 1.*Western European Languages.*NLS_ISO8859_1.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root
+set timeout 300
+set baud_rate_done_flag 0
+spawn make config
+
+#puts "Begin the interactive process of configuration"
+while 1 {
+    expect {
+
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            puts "End of configuration"
+            break
+        }
+
+        timeout {
+            puts "\n\nFATAL ERROR: config prompt timeout in make config"
+        }
+    }
+}
+
+step "Make busybox config"
+cd $src_root
+set timeout 300
+spawn make busybox-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(new\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "mkfs_ext2.*MKFS_EXT2.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "fdisk \\\(FDISK\\\) \\\[.*]" {
+            send "Y\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "End of configuration"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config"
+            break
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+
+step "Make"
+
+source  make_kernel.exp
+
+cd $src_root/testsuites/common
+
+step "Copy linux"
+
+source   copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

@@ -1,0 +1,29 @@
+diff --git a/Makefile b/Makefile
+index 5045c77..fa276bc 100644
+--- a/Makefile
++++ b/Makefile
+@@ -119,12 +119,9 @@ emfloat.o: emfloat.h emfloat.c nmglobal.h pointer.h Makefile
+ 	$(CC) $(MACHINE) $(DEFINES) $(CFLAGS)\
+ 		-c emfloat.c
+ 
+-pointer.h: pointer Makefile
+-	$(CC) $(MACHINE) $(DEFINES) $(CFLAGS)\
+-		-o pointer pointer.c
++pointer.h: Makefile
+ 	rm -f pointer.h
+-	if [ "4" = `./pointer` ] ; then touch pointer.h ;\
+-	else echo "#define LONG64" >pointer.h ; fi
++	touch pointer.h
+ 
+ misc.o: misc.h misc.c Makefile
+ 	$(CC) $(MACHINE) $(DEFINES) $(CFLAGS)\
+@@ -151,3 +148,9 @@ clean:
+ 
+ mrproper: clean
+ 	- /bin/rm -f nbench
++
++install: nbench
++	if [ ! -d $(BASE) ]; then mkdir $(BASE); fi
++	if [ ! -d $(BASE)/bin ]; then mkdir $(BASE)/bin; fi
++	if [ ! -d $(BASE)/lib ]; then mkdir $(BASE)/lib; fi
++	cp nbench COM.DAT NNET.DAT $(BASE)/bin

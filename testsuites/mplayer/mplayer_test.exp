@@ -1,0 +1,68 @@
+#!/usr/bin/expect
+#
+# Application mplayer test
+#
+# Usage:
+#   ./mplayer_test.exp board_type
+#
+# Example:
+#   ./mplayer_test.exp BF609-EZKIT
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+# Different bootargs can be set here.
+# For example:
+# set bootargs $bootargs_param1
+source ../common/kernel_boot.exp
+
+
+step "Start testing"
+set case_num 0
+
+set timeout 10
+expect -re $kernel_prompt
+send "\r"
+expect -re $kernel_prompt
+
+
+set timeout 30
+incr case_num
+if [ catch {exec rcp video.avi root@$targetip:/} ] {
+    send_user "\nfail to copy video.avi\n"
+    send_user "$errorInfo\n"
+    case_fail $case_num
+} else {
+    case_pass $case_num
+}
+
+if { $board_type == "BF609-EZKIT" } {
+    start_backlight
+}
+
+sleep 5
+set timeout 300
+incr case_num
+send "mplayer -nodouble video.avi\r"
+while 1 {
+    expect {
+        -re "Exiting.*End of file.*$kernel_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

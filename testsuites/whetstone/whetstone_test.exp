@@ -1,0 +1,150 @@
+#!/usr/bin/expect
+#
+# whetstone performance test
+#
+# Usage:
+#   ./whetstone_test.exp board_type
+#
+# Example:
+#   ./whetstone_test.exp BF537-STAMP
+#
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+set case_num 0
+set timeout 10
+set version 1.2
+
+spawn /bin/bash
+expect -re $sh_prompt
+
+set timeout 5
+incr case_num
+send "cd $src_root\r"
+while 1 {
+    expect {
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "patch -p1 <testsuites/whetstone/whetstone_test.patch\r"
+while 1 {
+    expect {
+        -re "FAILED.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re "patching file package.*$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "cp testsuites/whetstone/Makefile output/build/whetstone-$version/\r"
+while 1 {
+    expect {
+        -nocase -re "(fail|cp:).*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set result_flag NA
+set timeout 7000
+incr case_num
+send "make whetstone-clean; time make whetstone\r"
+while 1 {
+    expect {
+        -re "(Error|rcp:|No such).*$sh_prompt" {
+            set result_flag FAIL
+            break
+        }
+        -re "real.*user.*sys.*$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+	    set timeout 5
+            send "\3"
+	    expect -re $sh_prompt
+            set result_flag FAIL
+            break
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "patch -p1 -R <testsuites/whetstone/whetstone_test.patch\r"
+while 1 {
+    expect {
+        -re "FAILED.*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re "patching file package.*$sh_prompt" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+set timeout 5
+incr case_num
+send "rm output/build/whetstone-$version/Makefile\r"
+while 1 {
+    expect {
+        -nocase -re "(fail|rm:).*$sh_prompt" {
+            case_fail $case_num
+        }
+        -re $sh_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+if { $result_flag == "FAIL" } {
+    incr case_num
+    send_user "FAIL when running test."
+    case_fail $case_num
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

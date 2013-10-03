@@ -1,0 +1,101 @@
+#!/usr/bin/expect
+
+source  ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Spawn kermit"
+source ../common/spawn_kermit.exp
+
+step "Reboot the kernel."
+# To add following line here to indicate that if the bootargs is different,
+# it could be set here. If the bootargs value is 0, it needn't be stated, 
+# for it is the default value.
+# set bootargs 	$bootargs_param0   
+source ../common/reboot_kernel.exp 
+
+step "Start testing."
+set case_num 0
+
+cd $src_root
+
+spawn /bin/bash
+
+send -s "bfin-uclinux-flthdr -p $src_root/output/target/bin/version\r"
+expect {
+       -re "$sh_prompt" { }
+        timeout { send_user "Failed to show flthdr info.\n"
+                break }
+}
+send -s "ls -l $src_root/output/target/bin/version\r"
+expect {
+       -re "$sh_prompt" { }
+        timeout { send_user "Failed.\n"
+                break }
+}
+send -s "bfin-uclinux-flthdr -z $src_root/output/target/bin/version\r"
+expect {
+       -re "$sh_prompt" { }
+        timeout { send_user "Failed to show flthdr info.\n"
+                break }
+}
+send -s "bfin-uclinux-flthdr -p $src_root/output/target/bin/version\r"
+expect {
+       -re "Compressed.*$sh_prompt" { }
+        timeout { send_user "Failed to show flthdr info.\n"
+                break }
+}
+send -s "ls -l $src_root/output/target/bin/version\r"
+expect {
+       -re "$sh_prompt" { }
+        timeout { send_user "Failed.\n"
+                break }
+}
+send "\r"
+expect "$sh_prompt"
+
+set timeout 10
+step "Copy testcase to target board\n"
+spawn rcp $src_root/output/target/bin/version root@$targetip:/
+while 1 {
+   expect {
+
+      "*connect*" {
+         send_log "\nCopy binary to target board failed\n"
+         case_fail $case_num
+      }
+
+      eof {
+         send_log "\nCopy binary to target board done\n"
+         break
+      }
+
+      timeout {
+         break
+      }
+   }
+}
+
+set spawn_id $kermit_spawn_id
+
+set timeout 20
+incr case_num
+send "\r"
+expect -re $kernel_prompt
+send "/version\r"
+while 1 {
+    expect {
+        -re "kernel:.*toolchain:.*$kernel_prompt" {        
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

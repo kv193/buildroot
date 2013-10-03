@@ -1,0 +1,149 @@
+#!/usr/bin/expect
+#
+# Build Kernel for Oprofile test
+#
+# Usage:
+#   ./build_oprofile_kernel.exp board_type binary_format 
+#
+# Example:
+#   ./build_oprofile_kernel.exp BF537-STAMP fdpic
+#
+
+source ../common/kernel_config.exp
+
+if { $argc < 2} {
+    puts "Please input: board_type, binary_format(fdpic or flat)"
+    exit
+}
+set format [lindex $argv 1]
+set log_name build_oprofile_${format}_kernel_log
+
+log_file $log_name
+send_user "Starting $argv0\n"
+send_log "\n#### Build kernel with binary_format $format. ####\n"
+
+# Command source_args can pass arguments while running source.
+# Send bfin binary formats as argument for make_bfin-format.exp,
+# and change to the specified bfin binary formats.
+# It won't change formats for arm.
+# make clean and source make_default_config.exp are already included.
+cd $src_root/testsuites/common
+step "Make config for specified bfin format"
+source_args make_bfin-format.exp $format
+
+if { $arch == "blackfin" } {
+    # Some app and libs are not supported by both formats, so just disable them
+    cd $src_root/testsuites/common
+    source config_cut_app.exp
+}
+
+step "Make kernel config"
+cd $src_root
+set timeout 300
+spawn make linux-config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "Profiling support.*PROFILING.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "OProfile system profiling.*OPROFILE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Compile the kernel with debug info.*DEBUG_INFO.*\\\[.*]" {
+            send "N\r"
+        }
+
+        -re "($anomalous_option) \\\[\[^\]]+/.]" {
+            send "\r"
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+step "user space config"
+cd $src_root
+set timeout 300
+spawn make config
+while 1 {
+    expect {
+        -nocase -re "\\\[\[^\r]*] (\\\(NEW\\\) )?(\[ymn])|choice\\\[.*]: \[0-9]+\r" {
+            continue
+        }
+
+        -re "libiconv.*BR2_PACKAGE_LIBICONV.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "oprofile.*BR2_PACKAGE_OPROFILE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "whetstone.*BR2_PACKAGE_WHETSTONE.*\\\[.*]" {
+            send "Y\r"
+        }
+
+        -re "Target ABI.*\[cC]hoice\\\[.*]" {
+            if { $format == "fdpic" } {
+                send "1\r"
+            } elseif { $format == "flat" } {
+                send "2\r"
+            } else {
+                send "\r"
+            }
+        }
+
+        "\\\(*) \\\[*]" {
+            sleep .01
+            send "\r"
+        }
+
+        -re "\[cC]hoice\\\[.*]:" {
+            send "\r"
+        }
+
+        eof {
+            send_user "\nEnd of configuration\n"
+            break
+        }
+
+        timeout {
+            send_user "\n\nFATAL ERROR: config prompt timeout in make config\n"
+            exit
+        }
+    }
+}
+
+cd $src_root/testsuites/common
+step "Make"
+source make_kernel.exp
+
+cd $src_root/testsuites/common
+step "Copy image"
+source copy_image.exp
+
+send_user "Ending $argv0\n"
+log_file

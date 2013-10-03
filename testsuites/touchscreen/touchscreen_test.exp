@@ -1,0 +1,74 @@
+#!/usr/bin/expect
+#
+# touchscreen test
+#
+# Usage:
+#   ./touchscreen_test.exp board_type
+#
+# Example:
+#   ./touchscreen_test.exp BF537-STAMP
+#
+
+source ../common/kernel_config.exp
+log_file [log_file_name "$argv0"]
+send_user "Starting $argv0\n"
+set TITLE [title "$argv0"]
+
+step "Start kermit"
+source ../common/spawn_kermit.exp
+
+step "Boot kernel"
+source ../common/kernel_boot.exp
+
+step "Start testing"
+sleep 4
+set case_num 0
+
+set timeout 10
+incr case_num
+send -s "event_test /dev/input/event0\r"
+while 1 {
+    expect {
+        -re "Input device name.*AD7877 Touchscreen.*Testing.*exit" {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+puts "\nPlease touch the keypad...\n"
+incr case_num
+while 1 {
+    expect {
+        -re "Event: time.*type.*code.*value" {
+            sleep 1
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+sleep 5
+incr case_num
+send -s "\3"
+while 1 {
+    expect {
+         -re $kernel_prompt {
+            case_pass $case_num
+            break
+        }
+        timeout {
+            case_fail $case_num
+        }
+    }
+}
+
+all_pass
+send_user "Ending $argv0\n"
+log_file

@@ -4,6 +4,12 @@ choice
 	help
 	  Select your board!
 
+config BFIN533_PERCH
+	bool "Kvarta BF533-PERCH"
+	depends on (BF533)
+	help
+	  Support kvarta-lab@yandex.ru.
+
 config BFIN533_EZKIT
 	bool "BF533-EZKIT"
 	help

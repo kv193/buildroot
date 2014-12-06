@@ -35,17 +35,17 @@ const char bfin_board_name[] = "Kvarta BF533-PERCH";
 static struct mtd_partition bfin_spi_flash_partitions[] = {
 	{
 		.name = "bootloader(spi)",
-		.size = 0x00020000,
-		.offset = 0,
+		.size = 0x00100000,
+		.offset = 0x00000000,
 		.mask_flags = MTD_CAP_ROM
 	}, {
 		.name = "linux kernel(spi)",
-		.size = 0xe0000,
-		.offset = 0x20000
+		.size = 0x00200000,
+		.offset = 0x00100000
 	}, {
 		.name = "file system(spi)",
-		.size = 0x700000,
-		.offset = 0x00100000,
+		.size = 0x00900000,
+		.offset = 0x00300000,
 	}
 };
 
@@ -81,7 +81,7 @@ static struct spi_board_info bfin_spi_board_info[] __initdata = {
 		.modalias = "m25p80",       /* Name of spi_driver for this device */
 		.max_speed_hz = 25000000,     /* max spi clock (SCK) speed in HZ */
 		.bus_num = 0,               /* Framework bus number */
-		.chip_select = GPIO_PF1 + MAX_CTRL_CS,           /* Framework chip select. On STAMP537 it is SPISSEL1*/
+		.chip_select = GPIO_PF2 + MAX_CTRL_CS,           /* Framework chip select. On STAMP537 it is SPISSEL1*/
 		.platform_data = &bfin_spi_flash_data,
 		.controller_data = &spi_flash_chip_info,
 		.mode = SPI_MODE_3,
@@ -281,169 +281,6 @@ static struct platform_device bfin_uart0_device = {
 #endif
 #endif
 
-#if defined(CONFIG_BFIN_SIR) || defined(CONFIG_BFIN_SIR_MODULE)
-#ifdef CONFIG_BFIN_SIR0
-static struct resource bfin_sir0_resources[] = {
-	{
-		.start = 0xFFC00400,
-		.end = 0xFFC004FF,
-		.flags = IORESOURCE_MEM,
-	},
-	{
-		.start = IRQ_UART0_RX,
-		.end = IRQ_UART0_RX+1,
-		.flags = IORESOURCE_IRQ,
-	},
-	{
-		.start = CH_UART0_RX,
-		.end = CH_UART0_RX+1,
-		.flags = IORESOURCE_DMA,
-	},
-};
-
-static struct platform_device bfin_sir0_device = {
-	.name = "bfin_sir",
-	.id = 0,
-	.num_resources = ARRAY_SIZE(bfin_sir0_resources),
-	.resource = bfin_sir0_resources,
-};
-#endif
-#endif
-
-#if defined(CONFIG_SERIAL_BFIN_SPORT) || defined(CONFIG_SERIAL_BFIN_SPORT_MODULE)
-#ifdef CONFIG_SERIAL_BFIN_SPORT0_UART
-static struct resource bfin_sport0_uart_resources[] = {
-	{
-		.start = SPORT0_TCR1,
-		.end = SPORT0_MRCS3+4,
-		.flags = IORESOURCE_MEM,
-	},
-	{
-		.start = IRQ_SPORT0_RX,
-		.end = IRQ_SPORT0_RX+1,
-		.flags = IORESOURCE_IRQ,
-	},
-	{
-		.start = IRQ_SPORT0_ERROR,
-		.end = IRQ_SPORT0_ERROR,
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
-static unsigned short bfin_sport0_peripherals[] = {
-	P_SPORT0_TFS, P_SPORT0_DTPRI, P_SPORT0_TSCLK, P_SPORT0_RFS,
-	P_SPORT0_DRPRI, P_SPORT0_RSCLK, 0
-};
-
-static struct platform_device bfin_sport0_uart_device = {
-	.name = "bfin-sport-uart",
-	.id = 0,
-	.num_resources = ARRAY_SIZE(bfin_sport0_uart_resources),
-	.resource = bfin_sport0_uart_resources,
-	.dev = {
-		.platform_data = &bfin_sport0_peripherals, /* Passed to driver */
-	},
-};
-#endif
-#ifdef CONFIG_SERIAL_BFIN_SPORT1_UART
-static struct resource bfin_sport1_uart_resources[] = {
-	{
-		.start = SPORT1_TCR1,
-		.end = SPORT1_MRCS3+4,
-		.flags = IORESOURCE_MEM,
-	},
-	{
-		.start = IRQ_SPORT1_RX,
-		.end = IRQ_SPORT1_RX+1,
-		.flags = IORESOURCE_IRQ,
-	},
-	{
-		.start = IRQ_SPORT1_ERROR,
-		.end = IRQ_SPORT1_ERROR,
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
-static unsigned short bfin_sport1_peripherals[] = {
-	P_SPORT1_TFS, P_SPORT1_DTPRI, P_SPORT1_TSCLK, P_SPORT1_RFS,
-	P_SPORT1_DRPRI, P_SPORT1_RSCLK, 0
-};
-
-static struct platform_device bfin_sport1_uart_device = {
-	.name = "bfin-sport-uart",
-	.id = 1,
-	.num_resources = ARRAY_SIZE(bfin_sport1_uart_resources),
-	.resource = bfin_sport1_uart_resources,
-	.dev = {
-		.platform_data = &bfin_sport1_peripherals, /* Passed to driver */
-	},
-};
-#endif
-#endif
-
-#if defined(CONFIG_USB_ISP1362_HCD) || defined(CONFIG_USB_ISP1362_HCD_MODULE)
-static struct resource isp1362_hcd_resources[] = {
-	{
-		.start = 0x20308000,
-		.end = 0x20308000,
-		.flags = IORESOURCE_MEM,
-	}, {
-		.start = 0x20308004,
-		.end = 0x20308004,
-		.flags = IORESOURCE_MEM,
-	}, {
-		.start = IRQ_PF4,
-		.end = IRQ_PF4,
-		.flags = IORESOURCE_IRQ | IORESOURCE_IRQ_LOWEDGE,
-	},
-};
-
-static struct isp1362_platform_data isp1362_priv = {
-	.sel15Kres = 1,
-	.clknotstop = 0,
-	.oc_enable = 0,
-	.int_act_high = 0,
-	.int_edge_triggered = 0,
-	.remote_wakeup_connected = 0,
-	.no_power_switching = 1,
-	.power_switching_mode = 0,
-};
-
-static struct platform_device isp1362_hcd_device = {
-	.name = "isp1362-hcd",
-	.id = 0,
-	.dev = {
-		.platform_data = &isp1362_priv,
-	},
-	.num_resources = ARRAY_SIZE(isp1362_hcd_resources),
-	.resource = isp1362_hcd_resources,
-};
-#endif
-
-
-#if defined(CONFIG_USB_NET2272) || defined(CONFIG_USB_NET2272_MODULE)
-static struct resource net2272_bfin_resources[] = {
-	{
-		.start = 0x20300000,
-		.end = 0x20300000 + 0x100,
-		.flags = IORESOURCE_MEM,
-	}, {
-		.start = IRQ_PF6,
-		.end = IRQ_PF6,
-		.flags = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL,
-	},
-};
-
-static struct platform_device net2272_bfin_device = {
-	.name = "net2272",
-	.id = -1,
-	.num_resources = ARRAY_SIZE(net2272_bfin_resources),
-	.resource = net2272_bfin_resources,
-};
-#endif
-
-
-
 #if defined(CONFIG_MTD_PHYSMAP) || defined(CONFIG_MTD_PHYSMAP_MODULE)
 static struct mtd_partition para_partitions[] = {
 	{
@@ -509,10 +346,107 @@ static struct platform_device bfin_dpmc = {
 	},
 };
 
+/* Added by KV */
+#if defined(CONFIG_BFIN_SPORT) || defined(CONFIG_BFIN_SPORT_MODULE)
+unsigned short bfin_sport0_peripherals[] = {
+	P_SPORT0_TFS, P_SPORT0_DTPRI, P_SPORT0_TSCLK, P_SPORT0_RFS,
+	P_SPORT0_DRPRI, P_SPORT0_RSCLK, P_SPORT0_DRSEC, P_SPORT0_DTSEC, 0
+};
+/*
+static struct resource bfin_sport0_resources[] = {
+	{
+		.start = SPORT0_TCR1,
+		.end = SPORT0_MRCS3+4,
+		.flags = IORESOURCE_MEM,
+	},
+	{
+		.start = IRQ_SPORT0_TX,
+		.end = IRQ_SPORT0_TX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = IRQ_SPORT0_RX,
+		.end = IRQ_SPORT0_RX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = IRQ_SPORT0_ERROR,
+		.end = IRQ_SPORT0_ERROR,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = CH_SPORT0_TX,
+		.end = CH_SPORT0_TX,
+		.flags = IORESOURCE_DMA,
+	},
+	{
+		.start = CH_SPORT0_RX,
+		.end = CH_SPORT0_RX,
+		.flags = IORESOURCE_DMA,
+	},
+};
+*/
+static struct resource perch_sport0_resources[] = {
+	{
+		.start = SPORT0_TCR1,
+		.end = SPORT0_MRCS3+4,
+		.flags = IORESOURCE_MEM,
+	},
+	{
+	 	.start = IRQ_SPORT0_TX,
+		.end = IRQ_SPORT0_TX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = IRQ_SPORT0_RX,
+		.end = IRQ_SPORT0_RX+1,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.start = IRQ_SPORT0_ERROR,
+		.end = IRQ_SPORT0_ERROR,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+	 	.start = CH_SPORT0_TX,
+		.end = CH_SPORT0_TX,
+		.flags = IORESOURCE_DMA,
+	},
+	{
+		.start = CH_SPORT0_RX,
+		.end = CH_SPORT0_RX,
+		.flags = IORESOURCE_DMA,
+	},
+};
+
+/*
+static struct platform_device bfin_sport0_device = {
+	.name = "bfin_sport_raw",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(bfin_sport0_resources),
+	.resource = bfin_sport0_resources,
+	.dev = {
+		.platform_data = &bfin_sport0_peripherals, // Passed to driver
+	},
+};
+*/
+static struct platform_device perch_sport0_device = {
+	.name = "perch_sport_raw",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(perch_sport0_resources),
+	.resource = perch_sport0_resources,
+/*	.dev = {
+		.platform_data = &bfin_sport0_peripherals, // Passed to driver 
+	}, */
+
+};
+#endif
+
 static struct platform_device *cm_bf533_devices[] __initdata = {
 
 	&bfin_dpmc,
-
+	/* &bfin_sport0_device, */
+	&perch_sport0_device,
 #if defined(CONFIG_SERIAL_BFIN) || defined(CONFIG_SERIAL_BFIN_MODULE)
 #ifdef CONFIG_SERIAL_BFIN_UART0
 	&bfin_uart0_device,
@@ -563,7 +497,7 @@ static struct platform_device *cm_bf533_devices[] __initdata = {
 #endif
 };
 
-static int __init cm_bf533_init(void)
+static int __init bf533_perch_init(void)
 {
 	printk(KERN_INFO "%s(): registering device resources\n", __func__);
 	platform_add_devices(cm_bf533_devices, ARRAY_SIZE(cm_bf533_devices));
@@ -573,21 +507,12 @@ static int __init cm_bf533_init(void)
 	return 0;
 }
 
-arch_initcall(cm_bf533_init);
+arch_initcall(bf533_perch_init);
 
 static struct platform_device *cm_bf533_early_devices[] __initdata = {
 #if defined(CONFIG_SERIAL_BFIN_CONSOLE) || defined(CONFIG_EARLY_PRINTK)
 #ifdef CONFIG_SERIAL_BFIN_UART0
 	&bfin_uart0_device,
-#endif
-#endif
-
-#if defined(CONFIG_SERIAL_BFIN_SPORT_CONSOLE)
-#ifdef CONFIG_SERIAL_BFIN_SPORT0_UART
-	&bfin_sport0_uart_device,
-#endif
-#ifdef CONFIG_SERIAL_BFIN_SPORT1_UART
-	&bfin_sport1_uart_device,
 #endif
 #endif
 };

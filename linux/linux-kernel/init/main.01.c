@@ -809,7 +809,6 @@ static noinline int init_post(void)
 	current->signal->flags |= SIGNAL_UNKILLABLE;
 
 	if (ramdisk_execute_command) {
-		printk("**** ramdisk exe cmd is %s *****\n",ramdisk_execute_command);
 		run_init_process(ramdisk_execute_command);
 		printk(KERN_WARNING "Failed to execute %s\n",
 				ramdisk_execute_command);
@@ -822,7 +821,6 @@ static noinline int init_post(void)
 	 * trying to recover a really broken machine.
 	 */
 	if (execute_command) {
-		printk("**** Execute command is %s *****\n",execute_command);
 		run_init_process(execute_command);
 		printk(KERN_WARNING "Failed to execute %s.  Attempting "
 					"defaults...\n", execute_command);

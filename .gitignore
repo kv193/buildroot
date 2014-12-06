@@ -13,3 +13,5 @@
 *.rej
 *~
 *.pyc
+linux/linux-kernel/Documentation/*
+linux/linux-kernel/scripts/*

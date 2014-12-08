@@ -1,4 +1,4 @@
-/*
+/* test git 1
  * Copyright 2004-2009 Analog Devices Inc.
  *           2008-2009 Bluetechnix
  *                2005 National ICT Australia (NICTA)
